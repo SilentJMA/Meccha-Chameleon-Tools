@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# opencode
+.opencode/
+.swarm/
+
+# OS
+Thumbs.db
+.DS_Store
