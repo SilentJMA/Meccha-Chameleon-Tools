@@ -2,7 +2,7 @@
   <h1>Meccha Chameleon Tools</h1>
   <p><strong>External ESP · Aimbot · Active Camouflage</strong></p>
   <p>for <em>MECCHA CHAMELEON</em> (UE5)</p>
-  <a href="https://github.com/SilentJMA/Meccha-Camouflage-Tools/releases/latest"><img alt="Download" src="https://img.shields.io/badge/Download-Latest_Release-blue?style=for-the-badge&logo=github"></a>
+  <a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools/releases/latest"><img alt="Download" src="https://img.shields.io/badge/Download-Latest_Release-blue?style=for-the-badge&logo=github"></a>
   <br><br>
 </div>
 
