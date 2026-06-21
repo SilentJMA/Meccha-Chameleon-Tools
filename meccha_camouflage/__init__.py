@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-meccha_camouflage — ESP + Camouflage for MECCHA CHAMELEON (UE5).
+Meccha Chameleon Tools — ESP + Camouflage for MECCHA CHAMELEON (UE5).
 
 Based on ecpp/meccha-esp — external box ESP, aimbot, and direct-memory camouflage.
 
@@ -21,6 +21,8 @@ import struct
 import sys
 import time
 import ctypes
+import json
+import os
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -673,6 +675,46 @@ class Config:
     camo_last_time: float = 0.0
     camo_status: str = "Ready"
 
+    _SAVE_KEYS = {
+        "esp_enabled", "esp_style", "corner_box", "skeleton_esp",
+        "show_local", "show_names", "show_distance", "show_health",
+        "show_shield", "show_weapon", "snap_lines", "team_filter",
+        "max_distance", "enemy_color", "local_color", "box_height_world",
+        "dot_radius", "box_y_offset",
+        "camo_enabled", "camo_default_r", "camo_default_g", "camo_default_b",
+        "camo_key", "aimbot_enabled", "aimbot_key", "aimbot_fov",
+        "aimbot_smooth", "aimbot_target_offset", "aimbot_show_fov",
+    }
+
+    @property
+    def _config_path(self) -> str:
+        d = os.path.join(os.environ.get("APPDATA", "."), "MecchaCamouflage")
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, "config.json")
+
+    def save(self):
+        data = {}
+        for k in self._SAVE_KEYS:
+            v = getattr(self, k)
+            if isinstance(v, tuple):
+                data[k] = list(v)
+            else:
+                data[k] = v
+        with open(self._config_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def load(self):
+        try:
+            with open(self._config_path) as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return
+        for k, v in data.items():
+            if k in self._SAVE_KEYS:
+                if k in ("enemy_color", "local_color") and isinstance(v, list):
+                    v = tuple(v)
+                setattr(self, k, v)
+
 # ---------------------------------------------------------------------------
 # Menu
 # ---------------------------------------------------------------------------
@@ -703,7 +745,7 @@ class Menu(QWidget):
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
-        self.setWindowTitle("Meccha Camouflage")
+        self.setWindowTitle("Meccha Chameleon Tools")
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._drag_pos = None
@@ -747,9 +789,20 @@ class Menu(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
 
-        title = QLabel("Meccha Camouflage")
+        header = QHBoxLayout()
+        title = QLabel("Meccha Chameleon Tools")
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #0f0;")
-        layout.addWidget(title)
+        header.addWidget(title)
+        header.addStretch()
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet(
+            "QPushButton { background: #500; color: #fff; border: none; border-radius: 4px; font-weight: bold; }"
+            "QPushButton:hover { background: #a00; }"
+        )
+        close_btn.clicked.connect(self.hide)
+        header.addWidget(close_btn)
+        layout.addLayout(header)
 
         tabs = QTabWidget()
         tabs.setStyleSheet("""
@@ -762,17 +815,21 @@ class Menu(QWidget):
         tabs.addTab(self._build_aim_tab(), "Aimbot")
         layout.addWidget(tabs)
 
-        hint = QLabel("Insert/F1: menu  |  F10: camouflage")
+        hint = QLabel("✕ close  |  Insert/F1: show  |  F10: camouflage")
         hint.setStyleSheet("color: #888; font-size: 10px; padding-top: 4px;")
         layout.addWidget(hint)
 
         outer.addWidget(container)
         self.setLayout(outer)
 
+    def _sc(self, attr, value):
+        setattr(self.config, attr, value)
+        self.config.save()
+
     def _chk(self, text, attr, parent):
         cb = QCheckBox(text)
         cb.setChecked(getattr(self.config, attr))
-        cb.stateChanged.connect(lambda s, a=attr: setattr(self.config, a, bool(s)))
+        cb.stateChanged.connect(lambda s, a=attr: self._sc(a, bool(s)))
         if parent: parent.addWidget(cb)
         return cb
 
@@ -787,7 +844,7 @@ class Menu(QWidget):
         cb = QComboBox()
         cb.addItems(["Dot", "2D Box", "Both"])
         cb.setCurrentIndex({"dot": 0, "box": 1, "both": 2}.get(self.config.esp_style, 0))
-        cb.currentTextChanged.connect(lambda t: setattr(self.config, "esp_style", {"Dot": "dot", "2D Box": "box", "Both": "both"}.get(t, "dot")))
+        cb.currentTextChanged.connect(lambda t, a="esp_style": self._sc(a, {"Dot": "dot", "2D Box": "box", "Both": "both"}.get(t, "dot")))
         style_row.addWidget(cb)
         gl.addLayout(style_row)
 
@@ -811,23 +868,23 @@ class Menu(QWidget):
         gl3 = QGridLayout(g3); gl3.setSpacing(4)
         gl3.addWidget(QLabel("Model Height:"), 0, 0)
         sp0 = QSpinBox(); sp0.setRange(50, 300); sp0.setValue(int(self.config.box_height_world))
-        sp0.valueChanged.connect(lambda v: setattr(self.config, "box_height_world", float(v)))
+        sp0.valueChanged.connect(lambda v: self._sc("box_height_world", float(v)))
         gl3.addWidget(sp0, 0, 1)
 
         gl3.addWidget(QLabel("Dot Radius:"), 1, 0)
         sp = QSpinBox(); sp.setRange(2, 32); sp.setValue(self.config.dot_radius)
-        sp.valueChanged.connect(lambda v: setattr(self.config, "dot_radius", v))
+        sp.valueChanged.connect(lambda v: self._sc("dot_radius", v))
         gl3.addWidget(sp, 1, 1)
 
         gl3.addWidget(QLabel("Y Offset:"), 2, 0)
         sp2 = QSpinBox(); sp2.setRange(-50, 50); sp2.setValue(self.config.box_y_offset)
-        sp2.valueChanged.connect(lambda v: setattr(self.config, "box_y_offset", v))
+        sp2.valueChanged.connect(lambda v: self._sc("box_y_offset", v))
         gl3.addWidget(sp2, 2, 1)
 
         gl3.addWidget(QLabel("Max Dist (m):"), 3, 0)
         sp3 = QSpinBox(); sp3.setRange(0, 10000); sp3.setValue(self.config.max_distance)
         sp3.setSuffix(" m"); sp3.setSpecialValueText("Off")
-        sp3.valueChanged.connect(lambda v: setattr(self.config, "max_distance", v))
+        sp3.valueChanged.connect(lambda v: self._sc("max_distance", v))
         gl3.addWidget(sp3, 3, 1)
 
         hr = QHBoxLayout()
@@ -855,7 +912,7 @@ class Menu(QWidget):
             gr2.addWidget(QLabel(f"{ch}:"), i, 0)
             ds = QDoubleSpinBox(); ds.setRange(0, 1); ds.setSingleStep(0.05)
             ds.setValue(getattr(self.config, attr))
-            ds.valueChanged.connect(lambda v, a=attr: setattr(self.config, a, v))
+            ds.valueChanged.connect(lambda v, a=attr: self._sc(a, v))
             gr2.addWidget(ds, i, 1)
         gl3.addLayout(gr2)
         lo.addWidget(g3)
@@ -883,17 +940,17 @@ class Menu(QWidget):
         gr = QGridLayout(); gr.setSpacing(4)
         gr.addWidget(QLabel("FOV:"), 0, 0)
         sp = QSpinBox(); sp.setRange(10, 600); sp.setValue(self.config.aimbot_fov)
-        sp.valueChanged.connect(lambda v: setattr(self.config, "aimbot_fov", v))
+        sp.valueChanged.connect(lambda v: self._sc("aimbot_fov", v))
         gr.addWidget(sp, 0, 1)
 
         gr.addWidget(QLabel("Smooth:"), 1, 0)
         ds = QDoubleSpinBox(); ds.setRange(0.01, 1.0); ds.setSingleStep(0.05); ds.setValue(self.config.aimbot_smooth)
-        ds.valueChanged.connect(lambda v: setattr(self.config, "aimbot_smooth", v))
+        ds.valueChanged.connect(lambda v: self._sc("aimbot_smooth", v))
         gr.addWidget(ds, 1, 1)
 
         gr.addWidget(QLabel("Offset:"), 2, 0)
         sp2 = QSpinBox(); sp2.setRange(-200, 200); sp2.setValue(int(self.config.aimbot_target_offset))
-        sp2.valueChanged.connect(lambda v: setattr(self.config, "aimbot_target_offset", float(v)))
+        sp2.valueChanged.connect(lambda v: self._sc("aimbot_target_offset", float(v)))
         gr.addWidget(sp2, 2, 1)
         gl.addLayout(gr)
         lo.addWidget(g)
@@ -904,7 +961,7 @@ class Menu(QWidget):
         c = getattr(self.config, attr)
         c2 = QColorDialog.getColor(QColor(*c), self)
         if c2.isValid():
-            setattr(self.config, attr, (c2.red(), c2.green(), c2.blue()))
+            self._sc(attr, (c2.red(), c2.green(), c2.blue()))
 
     def _record_key(self):
         self._rec_btn = self.sender()
@@ -920,7 +977,7 @@ class Menu(QWidget):
         for vk in range(1, 0x100):
             if ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000:
                 name = VK_NAMES.get(vk, f"VK_{vk:02X}")
-                self.config.aimbot_key = name
+                self._sc("aimbot_key", name)
                 self._lbl_key.setText(f"Aim Key: {name}")
                 self._rec_timer.stop()
                 self._rec_btn.setEnabled(True); self._rec_btn.setText("Record Key")
@@ -1346,6 +1403,7 @@ def main():
     _dpi()
     app = QApplication(sys.argv)
     config = Config()
+    config.load()
 
     try:
         reader = GameReader()
