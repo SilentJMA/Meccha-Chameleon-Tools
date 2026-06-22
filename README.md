@@ -65,6 +65,7 @@ The menu organises options across five tabs selected from a sidebar:
 **COLORS** - Pick colours for enemy, local player, and skeleton overlay via colour picker dialog.
 
 <img width="502" height="561" alt="image" src="https://github.com/user-attachments/assets/5a588a39-db23-4bf0-9dda-899d95bd1d92" />
+<img width="2430" height="1177" alt="image" src="https://github.com/user-attachments/assets/38edb75b-e71d-4b35-addd-de8a80c38c66" />
 
 
 ---
