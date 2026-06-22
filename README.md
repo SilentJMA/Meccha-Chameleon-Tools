@@ -113,6 +113,7 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
+| Game Freeze after pressing F10 | time to write and analyze the colors location| Normal this takes between 1-2min |
 | Game attach failed | Process name mismatch | Verify PenguinHotel-Win64-Shipping.exe is running |
 | ESP shows nothing | Not in a match with players | Load into a lobby or match |
 | Only 1-2 players detected (4+ in game) | Team filter on; all use same character class | Disable Team Filter in the ESP tab (or update to v1.2.1 where it defaults to off) |
