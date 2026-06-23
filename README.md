@@ -12,7 +12,8 @@ External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) - Camouflage WIP
 
 ---
 
-<video src='demo.mp4' controls width="100%"></video>
+<p>Demo: F10 camouflage, the short freeze ~1min, and solution menu</p>
+<video src="https://raw.githubusercontent.com/SilentJMA/Meccha-Chameleon-Tools/master/demo.mp4" controls width="100%"></video>
 
 ## Features
 
