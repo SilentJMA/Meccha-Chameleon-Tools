@@ -1,6 +1,6 @@
 [![Build EXE](https://github.com/SilentJMA/Meccha-Chameleon-Tools/actions/workflows/build.yml/badge.svg)](https://github.com/SilentJMA/Meccha-Chameleon-Tools/actions/workflows/build.yml)
 
-<img width="512" height="572" alt="Preview" src="https://private-user-images.githubusercontent.com/16384750/611730347-11c72fa0-81ac-40dc-9356-75ba0d5efe23.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODIyMDkwNzEsIm5iZiI6MTc4MjIwODc3MSwicGF0aCI6Ii8xNjM4NDc1MC82MTE3MzAzNDctMTFjNzJmYTAtODFhYy00MGRjLTkzNTYtNzViYTBkNWVmZTIzLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNjA2MjMlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjYwNjIzVDA5NTkzMVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTllYjg3YTc0ZWNkZGFjMmIxZWUwYWYxN2EzNmY4NzRiNDc4ZWY0ZjE3Mjg3Njg5NjIzNGJlNTNlZTgyOTg3MmEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0JnJlc3BvbnNlLWNvbnRlbnQtdHlwZT1pbWFnZSUyRnBuZyJ9.-syAwc8DFEZhIQg-bJqdxj0qoJwPNRIVcVJgbwCwivo" />
+<img src="preview.png" alt="Meccha Chameleon Tools" width="100%"/>
 
 # Meccha Chameleon Tools
 
