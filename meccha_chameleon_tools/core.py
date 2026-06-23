@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Core game reading engine for MECCHA CHAMELEON (UE5.6) ESP.
+Core game reading engine for MECCA CHAMELEON (UE5.6) ESP.
 Memory primitives, pattern scanning, FName resolution, object array,
 offset resolution, and game state reading.
 """
@@ -450,7 +450,9 @@ class MecchaESP:
         self.resolver = OffsetResolver(self.pm, self.objects)
         self.offsets = self.resolver.resolve_map(self.OFFSET_MAP)
         for key in ("FCameraCacheEntry::POV", "FMinimalViewInfo::Location",
-                     "FMinimalViewInfo::Rotation", "FMinimalViewInfo::FOV"):
+                     "FMinimalViewInfo::Rotation", "FMinimalViewInfo::FOV",
+                     "UStruct::ChildProperties", "FField::Next",
+                     "FProperty::Offset_Internal", "FField::NamePrivate"):
             self.offsets[key] = OFFSETS[key]
         self.gengine = self.objects.find_first_instance("GameEngine")
         if not self.gengine:
@@ -687,9 +689,17 @@ class MecchaESP:
         return name_to_idx
 
     def get_skeletal_mesh(self, actor):
-        """Find USkeletalMeshComponent on the actor."""
+        """Find USkeletalMeshComponent on the actor. Tries multiple class name patterns."""
+        # Try primary match first
         mesh = self.find_component_by_class_partial(actor, "SkeletalMeshComponent")
-        return mesh
+        if mesh:
+            return mesh
+        # Try broader patterns
+        for pattern in ("SkinnedMeshComponent", "MeshComponent", "SkeletalMesh"):
+            mesh = self.find_component_by_class_partial(actor, pattern)
+            if mesh:
+                return mesh
+        return 0
 
     def get_bone_transforms(self, skeletal_mesh):
         """Read ComponentSpaceTransforms TArray<FTransform> from USkeletalMeshComponent."""
@@ -827,3 +837,307 @@ class MecchaESP:
                             "actor": actor,
                             "player_state": 0,
                         }
+
+    # -----------------------------------------------------------------------
+    # Camouflage — 3D character color writing
+    # -----------------------------------------------------------------------
+    def _get_local_pawn(self):
+        """Get the local player pawn address."""
+        world = self._get_world()
+        if not world:
+            return 0
+        pc = self._get_local_controller(world)
+        if not pc:
+            return 0
+        return rp(self.pm, pc + self.offsets["APlayerController::AcknowledgedPawn"])
+
+    def _find_materials_offset(self, mesh_component):
+        """Brute-force find the Materials TArray offset on a mesh component."""
+        for off in (0x4D0, 0x4E0, 0x4F0, 0x500, 0x510, 0x4C0, 0x4B0, 0x4A8):
+            try:
+                data, count = read_tarray_ptr(self.pm, mesh_component + off)
+                if data and 0 < count <= 32:
+                    first = rp(self.pm, data)
+                    if first and first > 0x100000:
+                        return off
+            except Exception:
+                continue
+        return None
+
+    def _get_mesh_materials(self, mesh_component):
+        """Get material instance pointers from a mesh component.
+        Tries a wide range of offsets for the Materials TArray."""
+        # Broader offset range for Materials TArray
+        for off in range(0x4A0, 0x550, 8):
+            try:
+                data, count = read_tarray_ptr(self.pm, mesh_component + off)
+                if data and 1 <= count <= 32:
+                    first = rp(self.pm, data)
+                    if first and first > 0x100000:
+                        mats = []
+                        for i in range(count):
+                            mat = rp(self.pm, data + i * 8)
+                            if mat:
+                                mats.append(mat)
+                        if mats:
+                            return mats
+            except Exception:
+                continue
+        return []
+
+    def _find_color_parameter(self, material):
+        """Brute-force find a vector parameter with valid FLinearColor on a material instance.
+        Only returns addresses verified to be within the TArray data bounds."""
+        # Wider range of offsets for VectorParameterValues TArray
+        for off in range(0x38, 0x140, 8):
+            try:
+                data, count = read_tarray_ptr(self.pm, material + off)
+                if not data or count == 0 or count > 64:
+                    continue
+                # Try multiple struct strides
+                for stride in (0x18, 0x20, 0x28, 0x30):
+                    data_end = data + count * stride
+                    for j in range(min(count, 32)):
+                        param_addr = data + j * stride
+                        # Try FLinearColor at known field offsets within the struct
+                        for color_off in (0x10, 0x14, 0x18):
+                            color_addr = param_addr + color_off
+                            # CRITICAL: only accept addresses inside the TArray data range
+                            if not (data <= color_addr < data_end and color_addr + 16 <= data_end):
+                                continue
+                            try:
+                                raw = self.pm.read_bytes(color_addr, 16)
+                                if len(raw) < 16:
+                                    continue
+                                r, g, b, a = struct.unpack("ffff", raw)
+                                if (0.0 <= r <= 1.0 and 0.0 <= g <= 1.0 and 0.0 <= b <= 1.0 and
+                                    0.0 <= a <= 1.0 and not (math.isnan(r) or math.isnan(g) or math.isnan(b) or math.isnan(a))):
+                                    return color_addr, (r, g, b, a)
+                            except Exception:
+                                continue
+            except Exception:
+                continue
+        return None, None
+
+    # -----------------------------------------------------------------------
+    # RuntimePaintableComponent helpers — texture-based paint
+    # -----------------------------------------------------------------------
+    def _find_runtime_paint_component(self, pawn):
+        """Find RuntimePaintableComponent via GObjects scan (like the mod source).
+        The mod uses FindObjects + GetOwner, NOT walking owned components."""
+        # First search ALL objects globally for RuntimePaintableComponent
+        for obj in self.objects.find_objects_by_class_name("RuntimePaintableComponent"):
+            outer = rp(self.pm, obj + OFFSETS["UObjectBase::OuterPrivate"])
+            if outer and outer == pawn:
+                return obj
+            # Also check if this component has the pawn as owner via Outer chain
+            if outer:
+                outer_cls = self.objects.class_name(outer)
+                if outer_cls and "Character" in outer_cls:
+                    return obj
+        # Fallback: walk owned components (less reliable)
+        for comp in self.walk_owned_components(pawn):
+            cname = self.objects.class_name(comp)
+            if cname and "RuntimePaintableComponent" in cname:
+                return comp
+        return 0
+
+    def _find_texture_on_component(self, pawn):
+        """By the mod source, the component stores paint textures.
+        Walk ALL properties of RuntimePaintableComponent and find
+        any that point to a UTexture."""
+        comp = self._find_runtime_paint_component(pawn)
+        if not comp:
+            return 0
+        cls = self.objects.obj_class(comp)
+        if not cls:
+            return 0
+        # Walk ALL ChildProperties looking for object pointers to textures
+        prop = rp(self.pm, cls + self.offsets["UStruct::ChildProperties"])
+        while prop:
+            try:
+                off = ru32(self.pm, prop + self.offsets["FProperty::Offset_Internal"])
+                if 0 < off < 0x600:
+                    val = rp(self.pm, comp + off)
+                    if val and val > 0x100000:
+                        cname = self.objects.class_name(val)
+                        if cname and "Texture" in cname:
+                            return val
+            except Exception:
+                pass
+            prop = rp(self.pm, prop + self.offsets["FField::Next"])
+        return 0
+
+    def _write_texture_flat(self, texture, r, g, b):
+        """Write a uniform color to a UTexture2D mip 0 bulk data.
+        Values 0.0-1.0, writes BGRA (common UE5 texture byte order)."""
+        # Convert float [0,1] to byte [0,255] — BGRA order for UE5 paint textures
+        b_val = max(0, min(255, int(b * 255.0)))
+        g_val = max(0, min(255, int(g * 255.0)))
+        r_val = max(0, min(255, int(r * 255.0)))
+        for pd_off in range(0x1C0, 0x260, 8):
+            try:
+                pd = rp(self.pm, texture + pd_off)
+                if not pd or pd < 0x100000:
+                    continue
+                for mips_off in (0x10, 0x18, 0x20, 0x28, 0x30, 0x38):
+                    mips_data, mips_count = read_tarray_ptr(self.pm, pd + mips_off)
+                    if not mips_data or mips_count != 1:
+                        continue
+                    mip = rp(self.pm, mips_data)
+                    if not mip or mip < 0x100000:
+                        continue
+                    for data_off in (0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30,
+                                     0x38, 0x40, 0x48, 0x50, 0x58):
+                        data_ptr = rp(self.pm, mip + data_off)
+                        if not data_ptr or data_ptr < 0x100000:
+                            continue
+                        test = self.pm.read_bytes(data_ptr, 4)
+                        if len(test) < 4:
+                            continue
+                        for size_off in (0x08, 0x10, 0x18, 0x20):
+                            try:
+                                raw = self.pm.read_bytes(mip + size_off, 8)
+                                if len(raw) < 8:
+                                    continue
+                                sz = struct.unpack("<Q", raw)[0]
+                                if 256 <= sz <= 33554432:
+                                    pixel_data = bytearray(sz)
+                                    for i in range(0, sz, 4):
+                                        pixel_data[i] = b_val
+                                        pixel_data[i+1] = g_val
+                                        pixel_data[i+2] = r_val
+                                        pixel_data[i+3] = 255
+                                    self.pm.write_bytes(data_ptr, bytes(pixel_data), sz)
+                                    return True
+                            except Exception:
+                                continue
+            except Exception:
+                continue
+        return False
+
+    def _get_component_property_ptr(self, comp, prop_name):
+        """Walk an object's class ChildProperties to find a named property,
+        then read the pointer value at that offset on the instance."""
+        cls = self.objects.obj_class(comp)
+        if not cls:
+            return 0
+        prop = rp(self.pm, cls + self.offsets["UStruct::ChildProperties"])
+        while prop:
+            try:
+                pname = self.objects.fnames.resolve(
+                    ru32(self.pm, prop + self.offsets["FField::NamePrivate"]))
+                if pname == prop_name:
+                    off = ru32(self.pm, prop + self.offsets["FProperty::Offset_Internal"])
+                    if off:
+                        return rp(self.pm, comp + off)
+            except Exception:
+                pass
+            prop = rp(self.pm, prop + self.offsets["FField::Next"])
+        return 0
+
+    def read_camouflage_color(self, actor):
+        """Read the current color from the pawn's material."""
+        try:
+            mesh = self.get_skeletal_mesh(actor)
+            if not mesh:
+                return None
+            for mat in self._get_mesh_materials(mesh):
+                color_addr, orig = self._find_color_parameter(mat)
+                if color_addr:
+                    return (orig[0]*255, orig[1]*255, orig[2]*255)
+            color_names = ["CharacterColor", "BodyColor", "CamouflageColor", "CurrentColor",
+                           "SkinColor", "MeshColor", "PlayerColor", "TeamColor", "Color"]
+            cls = self.objects.obj_class(actor)
+            if cls:
+                name, off = self.resolver.search_properties(cls, color_names)
+                if name and off >= 0:
+                    orig = struct.unpack("ffff", self.pm.read_bytes(actor + off, 16))
+                    return (orig[0]*255, orig[1]*255, orig[2]*255)
+            return None
+        except Exception:
+            return None
+
+    def set_camouflage_color(self, actor, r, g, b):
+        """Set camouflage color by writing directly to the paint texture.
+        Falls back to material/property methods if texture not found."""
+        r_lin = max(0.0, min(1.0, r / 255.0))
+        g_lin = max(0.0, min(1.0, g / 255.0))
+        b_lin = max(0.0, min(1.0, b / 255.0))
+        col_packed = struct.pack("ffff", r_lin, g_lin, b_lin, 1.0)
+
+        # -- Method 0: Write to DynamicMaterialInstance on component --
+        try:
+            comp = self._find_runtime_paint_component(actor)
+            if comp:
+                dyn_mat = self._get_component_property_ptr(comp, "DynamicMaterialInstance")
+                if dyn_mat:
+                    addr, _ = self._find_color_parameter(dyn_mat)
+                    if addr:
+                        self.pm.write_bytes(addr, col_packed, 16)
+                        return True
+        except Exception:
+            pass
+
+        # -- Method 1: Find paint texture on component and write directly --
+        try:
+            tex = self._find_texture_on_component(actor)
+            if tex:
+                if self._write_texture_flat(tex, r_lin, g_lin, b_lin):
+                    return True
+        except Exception:
+            pass
+
+        # -- Method 2: Mesh material vector parameters --
+        try:
+            mesh = self.get_skeletal_mesh(actor)
+            if mesh:
+                for mat in self._get_mesh_materials(mesh):
+                    addr, _ = self._find_color_parameter(mat)
+                    if addr:
+                        self.pm.write_bytes(addr, col_packed, 16)
+                        return True
+        except Exception:
+            pass
+
+        # -- Method 3: Named color/tint properties on pawn/component --
+        try:
+            cls = self.objects.obj_class(actor)
+            if cls:
+                comp = self._find_runtime_paint_component(actor)
+                if comp:
+                    comp_cls = self.objects.obj_class(comp)
+                    if comp_cls:
+                        hints = ["color", "tint", "body", "skin", "paint", "base", "diffuse",
+                                 "albedo", "mask", "channel", "rgb", "ambient", "emissive",
+                                 "custom", "primary", "team", "character"]
+                        name, off = self.resolver.search_properties(comp_cls, hints)
+                        if name and off >= 0:
+                            try:
+                                self.pm.write_bytes(comp + off, col_packed, 16)
+                                return True
+                            except Exception:
+                                pass
+                            try:
+                                col32 = struct.pack("BBBB", int(b_lin*255), int(g_lin*255), int(r_lin*255), 255)
+                                self.pm.write_bytes(comp + off, col32, 4)
+                                return True
+                            except Exception:
+                                pass
+                name, off = self.resolver.search_properties(cls, hints)
+                if name and off >= 0:
+                    try:
+                        self.pm.write_bytes(actor + off, col_packed, 16)
+                        return True
+                    except Exception:
+                        pass
+                    try:
+                        col32 = struct.pack("BBBB", int(b_lin*255), int(g_lin*255), int(r_lin*255), 255)
+                        self.pm.write_bytes(actor + off, col32, 4)
+                        return True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return False

@@ -7,7 +7,7 @@ External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) - Camouflage
 | Category | Capabilities |
 |----------|-------------|
 | **ESP** | Dot / 2D Box / Skeleton overlay, names, distance, snap lines, team filter, distance scaling |
-| **Camouflage** | Using F10 you inhert the colors of your location, this will freeze the game for ~1min - WIP |
+| **Camouflage** | WARNING DEV / OPTIONAL - Disabled by default. F10 samples screen color and applies to character material. Prompt at startup to enable. |
 | **Health Bars** | Health bar and shield bar, adjustable model height and Y offset |
 | **Radar** | External minimap radar with configurable size and range |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key |
@@ -37,6 +37,25 @@ python -m meccha_chameleon_tools
 
 Requirements: Windows 10/11, game running in windowed/borderless mode.
 
+> **Startup prompts** -- On first launch the tool asks:
+> 1. Enable **Camouflage**? (optional, DEV -- disabled by default)
+> 2. Download the **latest release** from GitHub and install it to the game directory?
+
+---
+
+## Camouflage (DEV / Optional)
+
+WARNING: This feature is in DEVELOPMENT and disabled by default.
+
+### How to use
+
+1. **Enable at startup** -- A dialog asks "Would you like to enable camouflage?" Click **Yes** to activate.
+2. **Or enable later** -- Open settings (Insert/F1), go to the CAMOUFLAGE tab, check "Camouflage Enabled".
+3. **Sample and apply** -- Press **F10** in-game to sample screen color and apply to character's 3D model.
+4. **Toggle off** -- Press F10 again to restore original color.
+
+> The setting is per-session. You will be prompted again each launch.
+
 | Dependency | Purpose |
 |-----------|---------|
 | pymem | Game process memory read/write |
@@ -50,7 +69,7 @@ Requirements: Windows 10/11, game running in windowed/borderless mode.
 | Key | Action |
 |-----|--------|
 | Insert / F1 | Toggle settings menu |
-| F10 | Camouflage|
+| F10 | Camouflage (DEV / optional -- disabled by default) |
 
 ### Settings Tabs
 
@@ -65,6 +84,8 @@ The menu organises options across five tabs selected from a sidebar:
 **AIMBOT** - Enable toggle, FOV circle display, key binding recorder, FOV radius, smoothing factor, aim offset.
 
 **COLORS** - Pick colours for enemy, local player, and skeleton overlay via colour picker dialog.
+
+**CAMOUFLAGE** - WARNING DEV / OPTIONAL -- Disabled by default. Enable via startup prompt or the CAMOUFLAGE tab. Press F10 to sample screen colour and apply it to your character's 3D model.
 
 <img width="502" height="561" alt="image" src="https://github.com/user-attachments/assets/5a588a39-db23-4bf0-9dda-899d95bd1d92" />
 <img width="2430" height="1177" alt="image" src="https://github.com/user-attachments/assets/38edb75b-e71d-4b35-addd-de8a80c38c66" />
@@ -124,6 +145,13 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 ---
 
 ## Changelog
+
+### v1.3.0 - Camouflage optional (DEV) + auto-install prompt
+
+- **Camouflage is now disabled by default** -- user is asked at startup whether to enable it.
+- **Camouflage marked as DEV / experimental** -- clearly labelled throughout UI and README.
+- **Auto-install prompt** -- tool asks at startup whether to download the latest release from GitHub to the game directory.
+- **Startup dialogs** -- two Qt prompts at launch: camouflage opt-in and release download/install.
 
 ### v1.2.1 - Player count & snap line fixes
 

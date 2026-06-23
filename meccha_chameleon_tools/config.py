@@ -56,6 +56,11 @@ class Config:
     radar_range: float = 5000.0
     radar_opacity: int = 160
 
+    # Camouflage
+    camouflage_enabled: bool = False
+    camouflage_sample_size: int = 10
+    camouflage_opacity: int = 200
+
     # Bone indices (fallback if name resolution fails)
     # Common UE5 mannequin bone indices
     bone_indices: dict = field(default_factory=lambda: {

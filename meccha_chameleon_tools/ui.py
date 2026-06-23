@@ -347,14 +347,14 @@ class Menu(QWidget):
                 background: #22223a; color: #aaa;
             }
         """)
-        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","COLORS"])
+        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"])
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background: transparent;")
 
         self._pages = {}
-        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]:
+        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"]:
             page = QWidget()
             page.setStyleSheet("background: transparent;")
             self._pages[tab_name] = page
@@ -387,9 +387,10 @@ class Menu(QWidget):
         self._build_radar_tab()
         self._build_aimbot_tab()
         self._build_colors_tab()
+        self._build_camouflage_tab()
 
     def _switch_tab(self, idx):
-        names = ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]
+        names = ["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"]
         if 0 <= idx < len(names):
             self.stack.setCurrentIndex(idx)
 
@@ -536,6 +537,45 @@ class Menu(QWidget):
         lo.addWidget(self.btn_skeleton_color)
         lo.addStretch()
 
+    def _build_camouflage_tab(self):
+        p = self._pages["CAMOUFLAGE"]
+        lo = QVBoxLayout(p)
+        lo.setContentsMargins(4, 4, 4, 4)
+        lo.setSpacing(4)
+
+        self.cb_camo = self._chk("Camouflage Enabled (WIP - In Progress)","camouflage_enabled")
+        lo.addWidget(self.cb_camo)
+
+        lbl = QLabel("Press F10 to sample and apply camouflage (WIP)")
+        lbl.setStyleSheet("color: #888; font-size: 10px; padding: 4px 0;")
+        lo.addWidget(lbl)
+
+        sr = QHBoxLayout()
+        sr.addWidget(QLabel("Sample Grid:"))
+        self.spn_camo_size = QSpinBox()
+        self.spn_camo_size.setRange(3, 30)
+        self.spn_camo_size.setValue(self.config.camouflage_sample_size)
+        self.spn_camo_size.valueChanged.connect(lambda v: setattr(self.config, "camouflage_sample_size", v))
+        sr.addWidget(self.spn_camo_size)
+        sr.addWidget(QLabel("(N×N pixels, centered on crosshair)"))
+        lo.addLayout(sr)
+
+        # Opacity slider
+        or_ = QHBoxLayout()
+        or_.addWidget(QLabel("Blend:"))
+        self.sld_camo_opacity = QSlider(Qt.Horizontal)
+        self.sld_camo_opacity.setRange(0, 255)
+        self.sld_camo_opacity.setValue(self.config.camouflage_opacity)
+        self.sld_camo_opacity.valueChanged.connect(lambda v: setattr(self.config, "camouflage_opacity", v))
+        or_.addWidget(self.sld_camo_opacity)
+        self.lbl_camo_val = QLabel(str(self.config.camouflage_opacity))
+        self.lbl_camo_val.setStyleSheet("color: #eee; font-size: 11px; min-width: 30px;")
+        self.sld_camo_opacity.valueChanged.connect(lambda v: self.lbl_camo_val.setText(str(v)))
+        or_.addWidget(self.lbl_camo_val)
+        lo.addLayout(or_)
+
+        lo.addStretch()
+
     def _chk(self, text, attr):
         cb = QCheckBox(text)
         cb.setChecked(getattr(self.config, attr))
@@ -593,6 +633,12 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setWindowTitle("Meccha Chameleon Tools - Overlay")
         self._key_states = {}
+        self._camouflage_active = False
+        self._camouflage_color = None  # Tuple[int,int,int] when sampled
+        self._camo_key_held = False    # edge detection for F10
+        self._camo_feedback = ""       # brief status text ("Sampling...", "Camo ON", etc.)
+        self._camo_feedback_count = 0
+        self._original_pawn_color = None  # (r,g,b) to restore when camo toggled off
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
@@ -603,7 +649,7 @@ class Overlay(QWidget):
 
         # Poll menu toggle key
         self.key_timer = QTimer(self)
-        self.key_timer.timeout.connect(self._poll_menu_key)
+        self.key_timer.timeout.connect(self._poll_keys)
         self.key_timer.start(50)
 
     def _find_game_window(self):
@@ -630,7 +676,7 @@ class Overlay(QWidget):
         self._resize_to_game()
         self.update()
 
-    def _poll_menu_key(self):
+    def _poll_keys(self):
         VK_INSERT = 0x2D
         VK_F1 = 0x70
         for vk, name in [(VK_INSERT, "insert"), (VK_F1, "f1")]:
@@ -641,6 +687,159 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
+
+        # Camouflage hotkey (F10)
+        if self.config.camouflage_enabled:
+            VK_F10 = 0x79
+            camo_held = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F10) & 0x8000)
+            if camo_held and not self._camo_key_held:
+                self._toggle_camouflage()
+            self._camo_key_held = camo_held
+
+    def _toggle_camouflage(self):
+        """Toggle camouflage on/off. When turning on, sample screen and write to 3D model."""
+        if self._camouflage_active:
+            # Turn OFF: restore original color
+            if self._original_pawn_color:
+                local_pawn = self.esp._get_local_pawn()
+                if local_pawn:
+                    r, g, b = self._original_pawn_color
+                    self.esp.set_camouflage_color(local_pawn, r, g, b)
+            self._camouflage_active = False
+            self._camouflage_color = None
+            self._original_pawn_color = None
+            self._camo_feedback = "CAMO OFF"
+            self._camo_feedback_count = 10
+        else:
+            # Turn ON: sample screen and apply to local pawn
+            self._camo_feedback = "SAMPLING..."
+            self._camo_feedback_count = 5
+            color = self._sample_screen_color()
+            if not color:
+                self._camo_feedback = "SAMPLE FAIL"
+                self._camo_feedback_count = 20
+                return
+
+            r, g, b = color
+            local_pawn = self.esp._get_local_pawn()
+            if not local_pawn:
+                self._camo_feedback = "NO PAWN FOUND"
+                self._camo_feedback_count = 20
+                return
+
+            # Save original color
+            orig = self.esp.read_camouflage_color(local_pawn)
+            if orig:
+                self._original_pawn_color = orig
+
+            # Apply new color to 3D model
+            ok = self.esp.set_camouflage_color(local_pawn, r, g, b)
+            if ok:
+                self._camouflage_color = color
+                self._camouflage_active = True
+                self._camo_feedback = "CAMO ON"
+                self._camo_feedback_count = 30
+            else:
+                self._camo_feedback = "MATL FAIL"
+                self._camo_feedback_count = 20
+
+    def _sample_screen_color(self):
+        """Sample N×N pixels around crosshair. Tries game DC, desktop DC, then BitBlt fallback."""
+        try:
+            import win32gui
+            w = self.width()
+            h = self.height()
+            if w < 100 or h < 100:
+                return None
+            cx, cy = w // 2, h // 2
+            grid = self.config.camouflage_sample_size
+            half = grid // 2
+
+            # Try game window DC first, then desktop DC
+            hdc = None
+            hwnd_used = 0
+            if self.game_hwnd:
+                hdc = win32gui.GetDC(self.game_hwnd)
+                hwnd_used = self.game_hwnd
+            if not hdc:
+                hdc = win32gui.GetDC(0)
+            if not hdc:
+                return None
+
+            total = 0
+            r_sum = g_sum = b_sum = 0
+            CLR_INVALID = 0xFFFFFFFF
+            for dx in range(-half, half + 1):
+                for dy in range(-half, half + 1):
+                    px = cx + dx * 4
+                    py = cy + dy * 4
+                    pixel = win32gui.GetPixel(hdc, px, py)
+                    if pixel != CLR_INVALID:
+                        r_sum += pixel & 0xFF
+                        g_sum += (pixel >> 8) & 0xFF
+                        b_sum += (pixel >> 16) & 0xFF
+                        total += 1
+
+            win32gui.ReleaseDC(hwnd_used, hdc)
+
+            if total > 0:
+                return (r_sum // total, g_sum // total, b_sum // total)
+
+            # Fallback: BitBlt the crosshair region
+            return self._sample_screen_bitblt(cx, cy, half)
+        except Exception:
+            return None
+
+    def _sample_screen_bitblt(self, cx, cy, half):
+        """Fallback: capture region via BitBlt then read pixels."""
+        try:
+            import win32gui, win32ui, win32con
+            hwnd = self.game_hwnd if self.game_hwnd else 0
+            hdc_src = win32gui.GetDC(hwnd) if hwnd else win32gui.GetDC(0)
+            if not hdc_src:
+                return None
+
+            step = 4
+            region_w = (half * 2 + 1) * step
+            region_h = (half * 2 + 1) * step
+            x0 = cx - half * step
+            y0 = cy - half * step
+
+            hdc_mem = win32gui.CreateCompatibleDC(hdc_src)
+            bmp = win32gui.CreateCompatibleBitmap(hdc_src, region_w, region_h)
+            win32gui.SelectObject(hdc_mem, bmp)
+
+            win32gui.BitBlt(hdc_mem, 0, 0, region_w, region_h,
+                           hdc_src, x0, y0, win32con.SRCCOPY)
+
+            # Read pixels: GetBitmapBits returns bytes (BGR format)
+            bits = win32gui.GetBitmapBits(bmp, True)
+
+            win32gui.DeleteObject(bmp)
+            win32gui.DeleteDC(hdc_mem)
+            win32gui.ReleaseDC(hwnd, hdc_src)
+
+            total = 0
+            r_sum = g_sum = b_sum = 0
+            stride = region_w * 4
+            for dy in range(0, region_h, step):
+                for dx in range(0, region_w, step):
+                    idx = dy * stride + dx * 4
+                    if idx + 3 < len(bits):
+                        # BMP stores BGR, we want RGB
+                        b = bits[idx]
+                        g = bits[idx + 1]
+                        r = bits[idx + 2]
+                        r_sum += r
+                        g_sum += g
+                        b_sum += b
+                        total += 1
+
+            if total == 0:
+                return None
+            return (r_sum // total, g_sum // total, b_sum // total)
+        except Exception:
+            return None
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -698,7 +897,19 @@ class Overlay(QWidget):
 
             sx, sy = screen_center
             sy += self.config.box_y_offset
-            color = self.config.local_color if is_local else self.config.enemy_color
+            if is_local:
+                color = self.config.local_color
+            elif self._camouflage_active and self._camouflage_color:
+                blend = self.config.camouflage_opacity / 255.0
+                camo = self._camouflage_color
+                orig = self.config.enemy_color
+                color = (
+                    int(camo[0] * blend + orig[0] * (1 - blend)),
+                    int(camo[1] * blend + orig[1] * (1 - blend)),
+                    int(camo[2] * blend + orig[2] * (1 - blend)),
+                )
+            else:
+                color = self.config.enemy_color
 
             # Clamped coords for on-screen elements (dots, bars, labels)
             # Snap lines use raw sx/sy so they reach screen edges
@@ -761,6 +972,23 @@ class Overlay(QWidget):
         non_local = [p for p in all_players if not p["is_local"]]
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.drawText(10, 20, f"Players: {len(non_local)}")
+        # Camouflage status — always show
+        if self._camo_feedback_count > 0 and self._camo_feedback:
+            # Brief post-F10 feedback (SAMPLING / SAMPLE FAIL / NO PAWN FOUND / MATL FAIL / CAMO ON / CAMO OFF)
+            self._camo_feedback_count -= 1
+            if self._camouflage_active and self._camouflage_color:
+                painter.setPen(QPen(QColor(*self._camouflage_color)))
+            else:
+                painter.setPen(QPen(QColor(200, 200, 200)))
+            painter.drawText(10, 40, self._camo_feedback)
+        elif self._camouflage_active and self._camouflage_color:
+            # Steady state: camo is ON
+            painter.setPen(QPen(QColor(*self._camouflage_color)))
+            painter.drawText(10, 40, "CAMO ON (3D)")
+        elif self.config.camouflage_enabled:
+            # Steady state: camo is OFF
+            painter.setPen(QPen(QColor(80, 80, 80)))
+            painter.drawText(10, 40, "CAMO OFF (F10)")
 
         # Aimbot
         if self.config.aimbot_enabled:
