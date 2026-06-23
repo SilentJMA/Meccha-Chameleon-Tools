@@ -1,3 +1,5 @@
+<img width="504" height="561" alt="image" src="https://github.com/user-attachments/assets/a83d6aaa-b6aa-40c0-b6d8-2f2fa54d9856" />
+
 # Meccha Chameleon Tools
 
 External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) - Camouflage WIP
@@ -50,9 +52,17 @@ WARNING: This feature is in DEVELOPMENT and disabled by default.
 ### How to use
 
 1. **Enable at startup** -- A dialog asks "Would you like to enable camouflage?" Click **Yes** to activate.
-2. **Or enable later** -- Open settings (Insert/F1), go to the CAMOUFLAGE tab, check "Camouflage Enabled".
-3. **Sample and apply** -- Press **F10** in-game to sample screen color and apply to character's 3D model.
-4. **Toggle off** -- Press F10 again to restore original color.
+<img width="505" height="236" alt="image" src="https://github.com/user-attachments/assets/a3607aff-dd41-4e12-8f8e-aca47b35d03c" />
+If you click Yes
+<img width="552" height="232" alt="image" src="https://github.com/user-attachments/assets/bfe7769c-4ba1-431e-88d8-cfcdfb1890cd" />
+success
+<img width="496" height="138" alt="image" src="https://github.com/user-attachments/assets/a534fe20-4cfe-434e-b659-1d9f15f7fcf9" />
+make sure the game start with next run
+<img width="414" height="171" alt="image" src="https://github.com/user-attachments/assets/f58eba89-440d-4183-96d6-1a2574c57b8a" />
+
+3. **Or enable later** -- Open settings (Insert/F1), go to the CAMOUFLAGE tab, check "Camouflage Enabled".
+4. **Sample and apply** -- Press **F10** in-game to sample screen color and apply to character's 3D model.
+5. **Toggle off** -- Press F10 again to restore original color.
 
 > The setting is per-session. You will be prompted again each launch.
 
@@ -87,7 +97,8 @@ The menu organises options across five tabs selected from a sidebar:
 
 **CAMOUFLAGE** - WARNING DEV / OPTIONAL -- Disabled by default. Enable via startup prompt or the CAMOUFLAGE tab. Press F10 to sample screen colour and apply it to your character's 3D model.
 
-<img width="502" height="561" alt="image" src="https://github.com/user-attachments/assets/5a588a39-db23-4bf0-9dda-899d95bd1d92" />
+<img width="512" height="572" alt="image" src="https://github.com/user-attachments/assets/11c72fa0-81ac-40dc-9356-75ba0d5efe23" />
+
 <img width="2430" height="1177" alt="image" src="https://github.com/user-attachments/assets/38edb75b-e71d-4b35-addd-de8a80c38c66" />
 
 
