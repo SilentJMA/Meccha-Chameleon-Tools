@@ -10,10 +10,10 @@ from typing import Tuple, Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QCheckBox, QComboBox, QLabel,
     QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QColorDialog,
-    QSpinBox, QDoubleSpinBox, QSlider, QListWidget, QStackedWidget,
+    QSpinBox, QDoubleSpinBox, QSlider, QStackedWidget, QButtonGroup,
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF
+from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF, QPixmap, QFontMetrics
 from PyQt5.QtCore import QPointF
 
 from meccha_chameleon_tools.core import (
@@ -261,66 +261,188 @@ def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size,
 
 
 # ---------------------------------------------------------------------------
-# Menu widget
+# GitHub banner widget
 # ---------------------------------------------------------------------------
 GITHUB_URL = "https://github.com/SilentJMA/Meccha-Chameleon-Tools"
+
+# Official GitHub octocat silhouette (filled path, viewBox 24x24)
+_GITHUB_OCTOCAT_SVG = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E6EDF3">
+<path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+</svg>'''
+
+
+def _render_octocat_pixmap(size=22):
+    """Render the GitHub octocat icon to a QPixmap. Returns None on failure."""
+    try:
+        from PyQt5.QtSvg import QSvgRenderer
+        renderer = QSvgRenderer(_GITHUB_OCTOCAT_SVG)
+        if not renderer.isValid():
+            return None
+        pm = QPixmap(size, size)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        renderer.render(p)
+        p.end()
+        return pm
+    except Exception:
+        return None
+
+
+class GithubBanner(QFrame):
+    """Black GitHub-style banner with octocat icon + repo name. Clickable."""
+
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(46)
+        self.setObjectName("githubBanner")
+        self._apply_style(hover=False)
+
+        lo = QHBoxLayout(self)
+        lo.setContentsMargins(14, 6, 14, 6)
+        lo.setSpacing(8)
+
+        # Icon label (rendered SVG octocat or fallback star)
+        self.lbl_icon = QLabel()
+        pm = _render_octocat_pixmap(22)
+        if pm is not None:
+            self.lbl_icon.setPixmap(pm)
+            self.lbl_icon.setStyleSheet("background: transparent;")
+        else:
+            self.lbl_icon.setText("\u2605")  # ★ fallback
+            self.lbl_icon.setStyleSheet("color: #E6EDF3; font-size: 16px; background: transparent;")
+        self.lbl_icon.setFixedSize(22, 22)
+        lo.addWidget(self.lbl_icon)
+
+        # "GitHub" title (bold white)
+        self.lbl_title = QLabel("GitHub")
+        self.lbl_title.setStyleSheet(
+            "color: #E6EDF3; font-size: 11px; font-weight: bold; "
+            "font-family: 'Segoe UI', sans-serif; background: transparent;"
+        )
+        lo.addWidget(self.lbl_title)
+
+        # Separator dot
+        self.lbl_sep = QLabel("\u00b7")
+        self.lbl_sep.setStyleSheet(
+            "color: #484F58; font-size: 13px; background: transparent;"
+        )
+        lo.addWidget(self.lbl_sep)
+
+        # Repo path (gray, monospace-ish)
+        self.lbl_repo = QLabel("SilentJMA / Meccha-Chameleon-Tools")
+        self.lbl_repo.setStyleSheet(
+            "color: #8B949E; font-size: 10px; "
+            "font-family: 'Segoe UI', sans-serif; background: transparent;"
+        )
+        lo.addWidget(self.lbl_repo)
+
+        lo.addStretch()
+
+        # Arrow indicator
+        self.lbl_arrow = QLabel("\u2197")  # ↗ north-east arrow
+        self.lbl_arrow.setStyleSheet(
+            "color: #8B949E; font-size: 14px; background: transparent;"
+        )
+        lo.addWidget(self.lbl_arrow)
+
+    def _apply_style(self, hover=False):
+        if hover:
+            self.setStyleSheet("""
+                QFrame#githubBanner {
+                    background-color: #161B22;
+                    border: 1px solid #8B949E;
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QFrame#githubBanner {
+                    background-color: #0D1117;
+                    border: 1px solid #30363D;
+                    border-radius: 8px;
+                }
+            """)
+
+    def enterEvent(self, event):
+        self._apply_style(hover=True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._apply_style(hover=False)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            webbrowser.open(self.url)
+
+
+# ---------------------------------------------------------------------------
+# Menu widget
+# ---------------------------------------------------------------------------
 TAB_NAMES = ["ESP", "HEALTH", "RADAR", "AIMBOT", "COLORS", "CAMO", "SETTINGS"]
 
 
 class Menu(QWidget):
     STYLE = """
         QFrame#menuFrame {
-            background-color: #0E1018;
-            border: 1px solid #1B1E2A;
-            border-radius: 12px;
+            background-color: #0B0D14;
+            border: 1px solid #161922;
+            border-radius: 14px;
         }
         QLabel {
             color: #9CA3AF; font-size: 11px;
             font-family: "Segoe UI", "Inter", "SF Pro Text", sans-serif;
+            background: transparent;
         }
         QLabel#titleLbl {
-            color: #F3F4F6; font-size: 13px; font-weight: bold;
-            letter-spacing: 3px; padding: 2px 0 0 0;
+            color: #F3F4F6; font-size: 14px; font-weight: bold;
+            letter-spacing: 4px; padding: 0;
         }
         QLabel#subtitleLbl {
-            color: #6B7280; font-size: 9px; letter-spacing: 1px;
-            padding: 0 0 4px 0;
+            color: #5B6270; font-size: 9px; letter-spacing: 2px;
+            padding: 2px 0 0 0;
         }
         QLabel#sectionLbl {
-            color: #7C3AED; font-size: 9px; font-weight: bold;
-            letter-spacing: 2px; padding: 10px 0 4px 2px;
+            color: #8B5CF6; font-size: 9px; font-weight: bold;
+            letter-spacing: 2.5px; padding: 12px 0 4px 4px;
+            background: transparent;
         }
         QLabel#hintLbl {
-            color: #4B5563; font-size: 9px; line-height: 14px;
+            color: #4B5563; font-size: 9px;
         }
         QLabel#statusOn {
             color: #10B981; font-size: 10px; font-weight: bold;
+            padding: 4px 8px; background: transparent;
         }
         QLabel#statusOff {
             color: #6B7280; font-size: 10px; font-weight: bold;
+            padding: 4px 8px; background: transparent;
         }
         QLabel#linkLbl {
-            color: #7C3AED; font-size: 10px;
+            color: #8B5CF6; font-size: 10px; padding: 4px 0;
         }
         QLabel#linkLbl:hover { color: #A78BFA; }
         QCheckBox {
-            color: #D1D5DB; font-size: 11px; spacing: 8px; padding: 2px 0;
-            font-family: "Segoe UI", sans-serif;
+            color: #D1D5DB; font-size: 11px; spacing: 8px; padding: 3px 0;
+            font-family: "Segoe UI", sans-serif; background: transparent;
         }
         QCheckBox::indicator {
             width: 14px; height: 14px; border-radius: 4px;
             border: 1px solid #2D3142; background: #161922;
         }
-        QCheckBox::indicator:hover { border-color: #7C3AED; }
+        QCheckBox::indicator:hover { border-color: #8B5CF6; }
         QCheckBox::indicator:checked {
-            background: #7C3AED; border-color: #8B5CF6;
+            background: #8B5CF6; border-color: #A78BFA;
         }
         QComboBox {
             background-color: #161922; color: #E5E7EB;
             border: 1px solid #2D3142; padding: 4px 8px; border-radius: 6px;
             font-size: 11px; min-height: 20px;
         }
-        QComboBox:hover { border-color: #7C3AED; }
+        QComboBox:hover { border-color: #8B5CF6; }
         QComboBox::drop-down { border: none; width: 20px; }
         QComboBox::down-arrow {
             image: none; border-left: 4px solid transparent;
@@ -330,50 +452,38 @@ class Menu(QWidget):
         }
         QComboBox QAbstractItemView {
             background-color: #161922; color: #E5E7EB;
-            selection-background-color: #7C3AED; selection-color: #FFFFFF;
+            selection-background-color: #8B5CF6; selection-color: #FFFFFF;
             border: 1px solid #2D3142; outline: none; padding: 4px;
         }
         QPushButton {
             background-color: #161922; color: #D1D5DB;
-            border: 1px solid #2D3142; padding: 6px 12px; border-radius: 6px;
+            border: 1px solid #2D3142; padding: 7px 14px; border-radius: 6px;
             font-size: 11px; font-family: "Segoe UI", sans-serif;
         }
         QPushButton:hover {
-            background-color: #1B1F2E; border-color: #7C3AED; color: #F3F4F6;
+            background-color: #1B1F2E; border-color: #8B5CF6; color: #F3F4F6;
         }
         QPushButton:pressed { background-color: #11141D; }
         QPushButton#primaryBtn {
-            background-color: #7C3AED; border: 1px solid #8B5CF6;
+            background-color: #8B5CF6; border: 1px solid #A78BFA;
             color: #FFFFFF; font-weight: bold;
         }
         QPushButton#primaryBtn:hover {
-            background-color: #8B5CF6; border-color: #A78BFA;
+            background-color: #A78BFA; border-color: #C4B5FD;
         }
-        QPushButton#primaryBtn:pressed { background-color: #6D28D9; }
+        QPushButton#primaryBtn:pressed { background-color: #7C3AED; }
         QPushButton#dangerBtn {
             background-color: #161922; border: 1px solid #3B1D1D; color: #FCA5A5;
         }
         QPushButton#dangerBtn:hover {
             background-color: #1F1518; border-color: #DC2626; color: #FEE2E2;
         }
-        QPushButton#githubBtn {
-            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #13162A, stop:1 #1A1B33);
-            border: 1px solid #2A2D4A; color: #E5E7EB;
-            padding: 8px 12px; border-radius: 8px;
-            text-align: left; font-size: 11px; font-weight: bold;
-        }
-        QPushButton#githubBtn:hover {
-            border-color: #7C3AED; color: #FFFFFF;
-            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #1A1D36, stop:1 #23254A);
-        }
         QSpinBox, QDoubleSpinBox {
             background-color: #161922; color: #E5E7EB;
             border: 1px solid #2D3142; padding: 3px 6px; border-radius: 4px;
-            font-size: 11px; min-height: 20px; min-width: 60px;
+            font-size: 11px; min-height: 20px; min-width: 70px;
         }
-        QSpinBox:focus, QDoubleSpinBox:focus { border-color: #7C3AED; }
+        QSpinBox:focus, QDoubleSpinBox:focus { border-color: #8B5CF6; }
         QSpinBox::up-button, QDoubleSpinBox::up-button {
             background-color: #1B1F2E; border: none; width: 16px; border-radius: 2px;
         }
@@ -382,38 +492,46 @@ class Menu(QWidget):
         }
         QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
         QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-            background-color: #7C3AED;
+            background-color: #8B5CF6;
         }
         QSlider::groove:horizontal {
             border: none; height: 4px; background: #161922; border-radius: 2px;
         }
         QSlider::sub-page:horizontal {
-            background: #7C3AED; border-radius: 2px;
+            background: #8B5CF6; border-radius: 2px;
         }
         QSlider::handle:horizontal {
-            background: #F3F4F6; border: 2px solid #7C3AED;
-            width: 10px; height: 10px; margin: -5px 0; border-radius: 8px;
+            background: #F3F4F6; border: 2px solid #8B5CF6;
+            width: 12px; height: 12px; margin: -6px 0; border-radius: 9px;
         }
         QSlider::handle:horizontal:hover {
-            background: #8B5CF6; border-color: #A78BFA;
+            background: #A78BFA; border-color: #C4B5FD;
         }
     """
 
-    TAB_STYLE = """
-        QListWidget {
-            background: #0A0C12; border: 1px solid #1B1E2A;
-            border-radius: 8px; padding: 6px; outline: none;
+    TAB_BTN_STYLE = """
+        QPushButton {
+            background: transparent;
+            border: none;
+            color: #5B6270;
+            padding: 11px 10px;
+            text-align: left;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1.5px;
+            border-radius: 6px;
+            font-family: "Segoe UI", sans-serif;
         }
-        QListWidget::item {
-            color: #6B7280; padding: 10px 8px; border-radius: 6px;
-            font-size: 10px; font-weight: bold; letter-spacing: 1.5px;
-            margin: 1px 0;
+        QPushButton:hover:!checked {
+            background: #161922;
+            color: #D1D5DB;
         }
-        QListWidget::item:selected {
-            background: #7C3AED; color: #FFFFFF;
+        QPushButton:checked {
+            background: #8B5CF6;
+            color: #FFFFFF;
         }
-        QListWidget::item:hover:!selected {
-            background: #161922; color: #D1D5DB;
+        QPushButton:checked:hover {
+            background: #A78BFA;
         }
     """
 
@@ -430,7 +548,7 @@ class Menu(QWidget):
         self._drag_pos = None
         self._key_recorder = KeyRecorder(self._on_key_recorded)
         self._build_ui()
-        self.setFixedSize(540, 620)
+        self.setFixedSize(560, 640)
         # Auto-start polling timer (checks for game window every 2s)
         self._auto_start_timer = QTimer(self)
         self._auto_start_timer.timeout.connect(self._poll_auto_start)
@@ -451,39 +569,62 @@ class Menu(QWidget):
         container.setObjectName("menuFrame")
         container.setStyleSheet(self.STYLE)
         outer = QVBoxLayout(container)
-        outer.setContentsMargins(14, 12, 14, 12)
-        outer.setSpacing(8)
+        outer.setContentsMargins(16, 14, 16, 14)
+        outer.setSpacing(10)
 
         # GitHub banner
-        self.btn_github = QPushButton("  ★  SilentJMA / Meccha-Chameleon-Tools  →")
-        self.btn_github.setObjectName("githubBtn")
-        self.btn_github.setCursor(Qt.PointingHandCursor)
-        self.btn_github.clicked.connect(self._open_github)
-        outer.addWidget(self.btn_github)
+        self.banner = GithubBanner(GITHUB_URL, container)
+        outer.addWidget(self.banner)
 
-        # Title block
+        # Title block (with accent bar on left)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(10)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        accent = QFrame()
+        accent.setFixedSize(3, 18)
+        accent.setStyleSheet("background-color: #8B5CF6; border: none; border-radius: 1px;")
+        title_row.addStretch()
+        title_row.addWidget(accent)
         title = QLabel("MECCHA CHAMELEON TOOLS")
         title.setObjectName("titleLbl")
-        title.setAlignment(Qt.AlignCenter)
-        outer.addWidget(title)
-        subtitle = QLabel("ESP  •  RADAR  •  AIMBOT  •  CAMOUFLAGE")
+        title_row.addWidget(title)
+        title_row.addStretch()
+        outer.addLayout(title_row)
+        subtitle = QLabel("ESP  \u2022  RADAR  \u2022  AIMBOT  \u2022  CAMOUFLAGE")
         subtitle.setObjectName("subtitleLbl")
         subtitle.setAlignment(Qt.AlignCenter)
         outer.addWidget(subtitle)
 
         # Tab list + stacked pages
         body = QHBoxLayout()
-        body.setSpacing(8)
+        body.setSpacing(10)
 
-        self.tab_list = QListWidget()
-        self.tab_list.setFixedWidth(100)
-        self.tab_list.setFocusPolicy(Qt.NoFocus)
-        self.tab_list.setStyleSheet(self.TAB_STYLE)
-        self.tab_list.addItems(TAB_NAMES)
-        self.tab_list.currentRowChanged.connect(self._switch_tab)
+        # Tab bar (QPushButton-based for clean rendering, no QListWidget quirks)
+        tab_container = QWidget()
+        tab_container.setStyleSheet("background: transparent;")
+        tab_lo = QVBoxLayout(tab_container)
+        tab_lo.setContentsMargins(0, 0, 0, 0)
+        tab_lo.setSpacing(2)
+        self.tab_buttons = []
+        self.tab_group = QButtonGroup(self)
+        self.tab_group.setExclusive(True)
+        for i, name in enumerate(TAB_NAMES):
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setChecked(i == 0)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+            btn.setStyleSheet(self.TAB_BTN_STYLE)
+            btn.clicked.connect(lambda checked=False, idx=i: self._switch_tab(idx))
+            self.tab_group.addButton(btn, i)
+            self.tab_buttons.append(btn)
+            tab_lo.addWidget(btn)
+        tab_lo.addStretch()
+        tab_container.setFixedWidth(112)
 
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background: transparent;")
+        self.stack.setFrameShape(QFrame.NoFrame)
 
         self._pages = {}
         for tab_name in TAB_NAMES:
@@ -492,7 +633,7 @@ class Menu(QWidget):
             self._pages[tab_name] = page
             self.stack.addWidget(page)
 
-        body.addWidget(self.tab_list)
+        body.addWidget(tab_container)
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
 
@@ -508,7 +649,7 @@ class Menu(QWidget):
         self.btn_close.setCursor(Qt.PointingHandCursor)
         self.btn_close.clicked.connect(self._close_app)
 
-        hint = QLabel("Ins/F1 toggle  |  Drag to move")
+        hint = QLabel("Ins / F1 toggle  \u00b7  Drag to move")
         hint.setObjectName("hintLbl")
         bar.addWidget(self.btn_save)
         bar.addWidget(self.btn_close)
@@ -533,6 +674,9 @@ class Menu(QWidget):
     def _switch_tab(self, idx):
         if 0 <= idx < len(TAB_NAMES):
             self.stack.setCurrentIndex(idx)
+            # Keep button checked state in sync (in case tab switched programmatically)
+            if idx < len(self.tab_buttons):
+                self.tab_buttons[idx].setChecked(True)
 
     def _section(self, text):
         lbl = QLabel(text)
@@ -542,7 +686,7 @@ class Menu(QWidget):
     def _build_esp_tab(self):
         p = self._pages["ESP"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("DISPLAY"))
         self.cb_enabled = self._chk("ESP Enabled", "enabled")
@@ -576,7 +720,7 @@ class Menu(QWidget):
     def _build_health_tab(self):
         p = self._pages["HEALTH"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("BARS"))
         self.cb_hp = self._chk("Health Bar", "health_bar")
@@ -607,7 +751,7 @@ class Menu(QWidget):
     def _build_radar_tab(self):
         p = self._pages["RADAR"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("RADAR"))
         self.cb_radar = self._chk("Radar Enabled", "radar_enabled")
@@ -636,7 +780,7 @@ class Menu(QWidget):
     def _build_aimbot_tab(self):
         p = self._pages["AIMBOT"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("AIMBOT"))
         self.cb_aimbot = self._chk("Aimbot Enabled", "aimbot_enabled")
@@ -687,7 +831,7 @@ class Menu(QWidget):
     def _build_colors_tab(self):
         p = self._pages["COLORS"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(6)
         lo.addWidget(self._section("COLOR PICKER"))
         self.btn_enemy_color = QPushButton("Enemy Color")
@@ -710,7 +854,7 @@ class Menu(QWidget):
     def _build_camouflage_tab(self):
         p = self._pages["CAMO"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("CAMOUFLAGE  (WIP)"))
         self.cb_camo = self._chk("Camouflage Enabled (WIP - In Progress)", "camouflage_enabled")
@@ -726,7 +870,7 @@ class Menu(QWidget):
         self.spn_camo_size.setValue(self.config.camouflage_sample_size)
         self.spn_camo_size.valueChanged.connect(lambda v: setattr(self.config, "camouflage_sample_size", v))
         sr.addWidget(self.spn_camo_size)
-        sr.addWidget(QLabel("(N×N)"))
+        sr.addWidget(QLabel("(N\u00d7N)"))
         sr.addStretch()
         lo.addLayout(sr)
         # Opacity slider
@@ -747,7 +891,7 @@ class Menu(QWidget):
     def _build_settings_tab(self):
         p = self._pages["SETTINGS"]
         lo = QVBoxLayout(p)
-        lo.setContentsMargins(6, 6, 6, 6)
+        lo.setContentsMargins(8, 8, 8, 8)
         lo.setSpacing(4)
         lo.addWidget(self._section("AUTOMATION"))
         self.cb_auto_start = self._chk("Auto-start when game is detected", "auto_start_with_game")
@@ -757,16 +901,16 @@ class Menu(QWidget):
         hint.setWordWrap(True)
         lo.addWidget(hint)
         lo.addWidget(self._section("GAME STATUS"))
-        self.lbl_game_status = QLabel("● Checking...")
+        self.lbl_game_status = QLabel("\u25cf  Checking...")
         self.lbl_game_status.setObjectName("statusOff")
         lo.addWidget(self.lbl_game_status)
         lo.addWidget(self._section("ABOUT"))
-        about = QLabel("Meccha Chameleon Tools — ESP / radar / aimbot / camouflage overlay for the Chameleon game.")
+        about = QLabel("Meccha Chameleon Tools \u2014 ESP / radar / aimbot / camouflage overlay for the Chameleon game.")
         about.setObjectName("hintLbl")
         about.setWordWrap(True)
         lo.addWidget(about)
         lo.addWidget(self._section("REPOSITORY"))
-        link = QLabel(f'<a href="{GITHUB_URL}" style="color:#7C3AED;">{GITHUB_URL}</a>')
+        link = QLabel(f'<a href="{GITHUB_URL}" style="color:#8B5CF6; text-decoration: none;">{GITHUB_URL}</a>')
         link.setObjectName("linkLbl")
         link.setOpenExternalLinks(True)
         link.setTextFormat(Qt.RichText)
@@ -799,9 +943,6 @@ class Menu(QWidget):
             self.btn_save.setText('Save Failed!')
             QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
 
-    def _open_github(self):
-        webbrowser.open(GITHUB_URL)
-
     def _find_game_window(self):
         try:
             import win32gui
@@ -816,10 +957,10 @@ class Menu(QWidget):
         # Update status label
         if hasattr(self, 'lbl_game_status'):
             if game_running:
-                self.lbl_game_status.setText("●  Game detected")
+                self.lbl_game_status.setText("\u25cf  Game detected")
                 self.lbl_game_status.setObjectName("statusOn")
             else:
-                self.lbl_game_status.setText("●  Waiting for game...")
+                self.lbl_game_status.setText("\u25cf  Waiting for game...")
                 self.lbl_game_status.setObjectName("statusOff")
             # Force style refresh
             self.lbl_game_status.style().unpolish(self.lbl_game_status)
