@@ -759,31 +759,44 @@ class MecchaESP:
             return False
         # Wait for EXE to inject and settle, then trigger F10 to start bridge
         import time as _t
-        _t.sleep(3.0)
-        # Simulate F10 keypress globally to trigger the EXE's hotkey handler
+        _t.sleep(2.0)
+        # Simulate F10 keypress multiple times to trigger the EXE's hotkey handler
         try:
-            import ctypes
             user32 = ctypes.windll.user32
             VK_F10 = 0x79
-            # key down
-            user32.keybd_event(VK_F10, 0, 0, 0)
-            _t.sleep(0.05)
-            # key up
-            user32.keybd_event(VK_F10, 0, 2, 0)
-            print("[CAMO] sent F10 to trigger bridge")
+            for attempt in range(5):
+                user32.keybd_event(VK_F10, 0, 0, 0)
+                _t.sleep(0.05)
+                user32.keybd_event(VK_F10, 0, 2, 0)
+                _t.sleep(0.1)
+                # Check if bridge came alive
+                ping = MecchaESP._bridge_request("ping")
+                if ping.get("success"):
+                    print(f"[CAMO] bridge ready after F10 attempt {attempt+1}")
+                    return True
+            print("[CAMO] sent 5x F10 to trigger bridge")
         except Exception as e:
             print(f"[CAMO] F10 send failed (will wait for manual): {e}")
-        for i in range(120):
+        for i in range(160):
             _t.sleep(0.25)
             if self._bridge_proc.poll() is not None:
                 print(f"[CAMO] EXE exited early with code {self._bridge_proc.poll()}")
                 return False
             ping = MecchaESP._bridge_request("ping")
             if ping.get("success"):
-                print(f"[CAMO] bridge ready after {(i+1)*0.25 + 3:.1f}s")
+                print(f"[CAMO] bridge ready after {(i+1)*0.25 + 2:.1f}s")
                 return True
-            if i % 12 == 11:
-                print(f"[CAMO] waiting for bridge... ({(i+1)//12}/10)")
+            # Retry F10 every 10 seconds in case user needs to press manually
+            if i > 0 and i % 40 == 39:
+                print(f"[CAMO] retrying F10... ({i//40 + 1})")
+                try:
+                    user32.keybd_event(VK_F10, 0, 0, 0)
+                    _t.sleep(0.05)
+                    user32.keybd_event(VK_F10, 0, 2, 0)
+                except Exception:
+                    pass
+            if i % 16 == 15:
+                print(f"[CAMO] waiting for bridge... ({(i+1)//16}/10)")
         print("[CAMO] bridge never came alive")
         return False
 

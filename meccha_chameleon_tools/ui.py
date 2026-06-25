@@ -855,18 +855,19 @@ class Overlay(QWidget):
 
         if self.config.aimbot_enabled:
             cx, cy = w / 2, h / 2
-            if self.config.aimbot_show_fov:
-                painter.setPen(QPen(QColor(255, 255, 255), 1))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawEllipse(
-                    int(cx - self.config.aimbot_fov),
-                    int(cy - self.config.aimbot_fov),
-                    self.config.aimbot_fov * 2,
-                    self.config.aimbot_fov * 2,
-                )
             best_target = self._find_best_target(cam, w, h)
-            if best_target and self._aim_key_held():
-                self._aim_at(best_target[0], best_target[1])
+            if best_target:
+                if self.config.aimbot_show_fov:
+                    painter.setPen(QPen(QColor(255, 255, 255), 1))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawEllipse(
+                        int(cx - self.config.aimbot_fov),
+                        int(cy - self.config.aimbot_fov),
+                        self.config.aimbot_fov * 2,
+                        self.config.aimbot_fov * 2,
+                    )
+                if self._aim_key_held():
+                    self._aim_at(best_target[0], best_target[1])
 
         if self.config.radar_enabled and local_pos:
             radar_x = w - self.config.radar_size - 20
