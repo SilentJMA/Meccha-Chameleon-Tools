@@ -18,6 +18,7 @@ External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5)
 | **Health Bars** | Health bar and shield bar, adjustable model height and Y offset |
 | **Radar** | External minimap radar with configurable size and range |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key |
+| **Camouflage** | External paint tool toggle, color picker, sample grid size, blend opacity |
 | **Colors** | Enemy, local, skeleton color pickers |
 
 All features are fully external - no DLL injection, no UE4SS, no DXGI.
@@ -48,12 +49,12 @@ Requirements: Windows 10/11, game running in windowed/borderless mode.
 | Key | Action |
 |-----|--------|
 | Insert / F1 | Toggle settings menu |
-| F10 | Photo paint (camouflage) |
+| F9 | Camouflage paint (when enabled in CAMO tab) |
 | Close button | Bottom bar of menu -- quits the application entirely |
 
 ### Settings Tabs
 
-The menu organises options across five tabs selected from a sidebar:
+The menu organises options across six tabs selected from a sidebar:
 
 **ESP** - Enable/disable, style toggles (Dot / 2D Box / Skeleton), Show Local Player, Names, Distance, Snap Lines, Team Filter, Distance Scaling, dot radius.
 
@@ -62,6 +63,8 @@ The menu organises options across five tabs selected from a sidebar:
 **RADAR** - Enable/disable, radar size (80-400 px), radar range (1000-50000).
 
 **AIMBOT** - Enable toggle, FOV circle display, key binding recorder, FOV radius, smoothing factor, aim offset.
+
+**CAMO** - Enable/disable camouflage painting, color picker, sample grid size (N×N pixels centered on crosshair), blend opacity slider.
 
 **COLORS** - Pick colours for enemy, local player, and skeleton overlay via colour picker dialog.
 
@@ -86,7 +89,7 @@ UObjectArray -> find_class, iter_objects
 OffsetResolver -> dynamic property walking
 GameReader -> world, camera, players
 Overlay -> QPainter rendering loop @ 60 fps
-Menu -> PyQt5 settings window (5-tab sidebar: ESP, HEALTH, RADAR, AIMBOT, COLORS)
+Menu -> PyQt5 settings window (6-tab sidebar: ESP, HEALTH, RADAR, AIMBOT, CAMO, COLORS)
 ```
 
 ### Memory Access
@@ -118,6 +121,13 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 ---
 
 ## Changelog
+
+### v1.5.3 - CAMO tab, UI improvements
+
+- **CAMOUFLAGE tab** with enable toggle, color picker, sample grid size, blend opacity, and Paint Now button.
+- **UI credit** -- improvements by @mhmmmm000000 (PR #4).
+- **F9 hotkey** now gated by the CAMO tab toggle.
+- New config fields: `camouflage_enabled`, `camouflage_sample_size`, `camouflage_opacity`.
 
 ### v1.5.0 - Clean startup, aimbot consistency fix
 

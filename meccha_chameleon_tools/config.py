@@ -56,6 +56,11 @@ class Config:
     radar_range: float = 5000.0
     radar_opacity: int = 160
 
+    # Camouflage
+    camouflage_enabled: bool = False
+    camouflage_sample_size: int = 5
+    camouflage_opacity: int = 100
+
     # Game directory
     game_directory: str = r"C:\Program Files (x86)\Steam\steamapps\common\MECCA CHAMELEON\Chameleon\Binaries\Win64"
 

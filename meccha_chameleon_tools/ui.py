@@ -352,14 +352,14 @@ class Menu(QWidget):
                 background: #22223a; color: #aaa;
             }
         """)
-        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","COLORS"])
+        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","CAMO","COLORS"])
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background: transparent;")
 
         self._pages = {}
-        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]:
+        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","CAMO","COLORS"]:
             page = QWidget()
             page.setStyleSheet("background: transparent;")
             self._pages[tab_name] = page
@@ -396,10 +396,11 @@ class Menu(QWidget):
         self._build_health_tab()
         self._build_radar_tab()
         self._build_aimbot_tab()
+        self._build_camo_tab()
         self._build_colors_tab()
 
     def _switch_tab(self, idx):
-        names = ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]
+        names = ["ESP","HEALTH","RADAR","AIMBOT","CAMO","COLORS"]
         if 0 <= idx < len(names):
             self.stack.setCurrentIndex(idx)
 
@@ -530,6 +531,76 @@ class Menu(QWidget):
         lo.addLayout(ar)
         lo.addStretch()
 
+    def _build_camo_tab(self):
+        p = self._pages["CAMO"]
+        lo = QVBoxLayout(p)
+        lo.setContentsMargins(8, 8, 8, 8)
+        lo.setSpacing(6)
+        hdr = QLabel("CAMOUFLAGE PAINT")
+        hdr.setStyleSheet("font-size: 13px; font-weight: bold; color: #8ab4f8; padding: 2px 0;")
+        lo.addWidget(hdr)
+        self.cb_camo = self._chk("Enable Camouflage Painting","camouflage_enabled")
+        lo.addWidget(self.cb_camo)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #2a2a3e;")
+        lo.addWidget(sep)
+        lo.addWidget(QLabel("Camouflage Color:"))
+        self.btn_camo_color = QPushButton("Pick Color")
+        self.btn_camo_color.setFixedHeight(28)
+        self.btn_camo_color.setStyleSheet(
+            "QPushButton { background-color: #dc3c3c; border: 1px solid #5a2a2a;"
+            " border-radius: 4px; font-weight: bold; }"
+            " QPushButton:hover { background-color: #ec4c4c; }"
+        )
+        self.btn_camo_color.clicked.connect(lambda: self._pick_camo_color())
+        lo.addWidget(self.btn_camo_color)
+        # Sample grid size
+        sr = QHBoxLayout()
+        sr.addWidget(QLabel("Sample Grid:"))
+        self.spn_camo_size = QSpinBox()
+        self.spn_camo_size.setRange(1, 32)
+        self.spn_camo_size.setValue(self.config.camouflage_sample_size)
+        self.spn_camo_size.valueChanged.connect(lambda v: setattr(self.config, "camouflage_sample_size", v))
+        sr.addWidget(self.spn_camo_size)
+        sr.addWidget(QLabel("(N\u00d7N pixels, centered on crosshair)"))
+        sr.addStretch()
+        lo.addLayout(sr)
+        # Blend opacity slider
+        or_ = QHBoxLayout()
+        or_.addWidget(QLabel("Blend:"))
+        self.sld_camo_opacity = QSlider(Qt.Horizontal)
+        self.sld_camo_opacity.setRange(0, 100)
+        self.sld_camo_opacity.setValue(self.config.camouflage_opacity)
+        self.sld_camo_opacity.valueChanged.connect(lambda v: setattr(self.config, "camouflage_opacity", v))
+        or_.addWidget(self.sld_camo_opacity)
+        self.lbl_camo_val = QLabel(str(self.config.camouflage_opacity))
+        self.lbl_camo_val.setStyleSheet("color: #E5E7EB; font-size: 11px; min-width: 30px;")
+        self.sld_camo_opacity.valueChanged.connect(lambda v: self.lbl_camo_val.setText(str(v)))
+        or_.addWidget(self.lbl_camo_val)
+        lo.addLayout(or_)
+        self.lbl_camo_status = QLabel("Ready \u2014 Press F9 to paint")
+        self.lbl_camo_status.setStyleSheet("color: #888; font-size: 10px; padding: 4px 0;")
+        lo.addWidget(self.lbl_camo_status)
+        btn_paint_now = QPushButton("Paint Now")
+        btn_paint_now.setFixedHeight(32)
+        btn_paint_now.setStyleSheet(
+            "QPushButton { background-color: #2a4a3a; border: 1px solid #3a6a4a;"
+            " border-radius: 4px; font-weight: bold; font-size: 12px; }"
+            " QPushButton:hover { background-color: #3a6a4a; }"
+        )
+        btn_paint_now.clicked.connect(self._trigger_photo_paint)
+        lo.addWidget(btn_paint_now)
+        # Credit
+        cr = QFrame()
+        cr.setFrameShape(QFrame.HLine)
+        cr.setStyleSheet("color: #2a2a3e;")
+        lo.addWidget(cr)
+        credit = QLabel("UI by @mhmmmm000000 \u2014 PR #4")
+        credit.setStyleSheet("color: #555; font-size: 9px; padding: 2px 0;")
+        lo.addWidget(credit)
+        lo.addStretch()
+
     def _build_colors_tab(self):
         p = self._pages["COLORS"]
         lo = QVBoxLayout(p)
@@ -652,10 +723,10 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
-        # F9: Photo paint
+        # F9: Camouflage paint
         VK_F9 = 0x78
         f9_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
-        if f9_down and not self._key_states.get("f9"):
+        if f9_down and not self._key_states.get("f9") and self.config.camouflage_enabled:
             self._trigger_photo_paint()
         self._key_states["f9"] = f9_down
         # Decrement F9 feedback counter every poll tick
