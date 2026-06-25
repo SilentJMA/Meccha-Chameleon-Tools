@@ -2,25 +2,19 @@
   
 <img src="preview.png" alt="Meccha Chameleon Tools" width="100%"/>
 
-[![Build EXE](https://github.com/SilentJMA/Meccha-Chameleon-Tools/actions/workflows/build.yml/badge.svg)](https://github.com/SilentJMA/Meccha-Chameleon-Tools/actions/workflows/build.yml)
-
 # Meccha Chameleon Tools
 
-External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) - Camouflage WIP
+External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5)
 
 </div>
 
 ---
-
-<p>Demo: F10 camouflage, the short freeze ~1min, and solution menu</p>
-<video src="https://raw.githubusercontent.com/SilentJMA/Meccha-Chameleon-Tools/master/demo.mp4" controls width="100%"></video>
 
 ## Features
 
 | Category | Capabilities |
 |----------|-------------|
 | **ESP** | Dot / 2D Box / Skeleton overlay, names, distance, snap lines, team filter, distance scaling |
-| **Camouflage** | WARNING DEV / OPTIONAL - Disabled by default. F10 samples screen color and applies to character material. Prompt at startup to enable. |
 | **Health Bars** | Health bar and shield bar, adjustable model height and Y offset |
 | **Radar** | External minimap radar with configurable size and range |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key |
@@ -28,20 +22,15 @@ External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) - Camouflage WIP
 
 All features are fully external - no DLL injection, no UE4SS, no DXGI.
 
-<video src='demo.mp4' controls width='100%'></video>
-
-<img width="720" height="640" alt="image" src="https://github.com/user-attachments/assets/5a799f95-841d-4a1a-b8ad-c08d53973cb5" />
-
-
 ---
 
 ## Quick Start
 
 ### Option 1 - Standalone (no Python required)
 
-1. Download MecchaCamouflage.exe from the latest release
+1. Download the latest release EXE
 2. Launch MECCA CHAMELEON (windowed / borderless)
-3. Run MecchaCamouflage.exe
+3. Run the EXE
 
 ### Option 2 - From source
 
@@ -52,50 +41,6 @@ python -m meccha_chameleon_tools
 
 Requirements: Windows 10/11, game running in windowed/borderless mode.
 
-> **Startup prompts** -- On each launch the tool runs two prompts:
-> 1. Enable **Camouflage**? (optional, DEV -- disabled by default)
-> 2. **Auto-install** -- Only prompts on first launch if no release is found in the game directory:
->    - **First time** -- Checks GitHub and asks "Install MecchaCamouflage?" with latest release info; Yes = download & install, No = skip to menu.
->    - **Already installed** -- No dialog at all, opens menu directly.
->
-> A .meccha_version file in the game directory tracks the installed version.
-
----
-
-## Camouflage (DEV / Optional)
-
-WARNING: This feature is in DEVELOPMENT and disabled by default.
-
-### How to use
-
-1. **Enable at startup** -- A dialog asks "Would you like to enable camouflage?" Click **Yes** to activate.
-
-<img width="505" height="236" alt="image" src="https://github.com/user-attachments/assets/a3607aff-dd41-4e12-8f8e-aca47b35d03c" />
-
-If you click Yes
-
-<img width="552" height="232" alt="image" src="https://github.com/user-attachments/assets/bfe7769c-4ba1-431e-88d8-cfcdfb1890cd" />
-
-success
-
-<img width="496" height="138" alt="image" src="https://github.com/user-attachments/assets/a534fe20-4cfe-434e-b659-1d9f15f7fcf9" />
-
-make sure the game start with next run
-
-<img width="414" height="171" alt="image" src="https://github.com/user-attachments/assets/f58eba89-440d-4183-96d6-1a2574c57b8a" />
-
-2. **Or enable later** -- Open settings (Insert/F1), go to the CAMOUFLAGE tab, check "Camouflage Enabled".
-3. **Sample and apply** -- Press **F10** in-game to sample screen color and apply to character's 3D model.
-4. **Toggle off** -- Press F10 again to restore original color.
-
-> The setting is per-session. You will be prompted again each launch.
-
-| Dependency | Purpose |
-|-----------|---------|
-| pymem | Game process memory read/write |
-| PyQt5 | Transparent overlay + settings UI |
-| pywin32 | GDI pixel sampling, window detection |
-
 ---
 
 ## Controls
@@ -103,7 +48,7 @@ make sure the game start with next run
 | Key | Action |
 |-----|--------|
 | Insert / F1 | Toggle settings menu |
-| F10 | Camouflage (DEV / optional -- disabled by default) |
+| F9 | Photo paint (camouflage) |
 | Close button | Bottom bar of menu -- quits the application entirely |
 
 ### Settings Tabs
@@ -119,13 +64,6 @@ The menu organises options across five tabs selected from a sidebar:
 **AIMBOT** - Enable toggle, FOV circle display, key binding recorder, FOV radius, smoothing factor, aim offset.
 
 **COLORS** - Pick colours for enemy, local player, and skeleton overlay via colour picker dialog.
-
-**CAMOUFLAGE** - WARNING DEV / OPTIONAL -- Disabled by default. Enable via startup prompt or the CAMOUFLAGE tab. Press F10 to sample screen colour and apply it to your character's 3D model.
-
-<img width="512" height="572" alt="image" src="https://github.com/user-attachments/assets/11c72fa0-81ac-40dc-9356-75ba0d5efe23" />
-
-<img width="2430" height="1177" alt="image" src="https://github.com/user-attachments/assets/38edb75b-e71d-4b35-addd-de8a80c38c66" />
-
 
 ---
 
@@ -148,7 +86,7 @@ UObjectArray -> find_class, iter_objects
 OffsetResolver -> dynamic property walking
 GameReader -> world, camera, players
 Overlay -> QPainter rendering loop @ 60 fps
-Menu -> PyQt5 settings window (6-tab sidebar: ESP, HEALTH, RADAR, AIMBOT, COLORS, CAMOUFLAGE)
+Menu -> PyQt5 settings window (5-tab sidebar: ESP, HEALTH, RADAR, AIMBOT, COLORS)
 ```
 
 ### Memory Access
@@ -170,17 +108,23 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| Game Freeze after pressing F10 | time to write and analyze the colors location| Normal this takes between 1-2min |
 | Game attach failed | Process name mismatch | Verify PenguinHotel-Win64-Shipping.exe is running |
 | ESP shows nothing | Not in a match with players | Load into a lobby or match |
-| Only 1-2 players detected (4+ in game) | Team filter on; all use same character class | Disable Team Filter in the ESP tab (or update to v1.2.1 where it defaults to off) |
-| Snap lines not visible | w2s dropped off-screen projections | Update to v1.2.1 â€” off-screen players now correctly draw lines to screen edge |
+| Only 1-2 players detected (4+ in game) | Team filter on; all use same character class | Disable Team Filter in the ESP tab |
+| Snap lines not visible | w2s dropped off-screen projections | Update â€” off-screen players now correctly draw lines to screen edge |
 | Aimbot not firing | Key binding mismatch | Re-record the aim key in the AIMBOT tab |
 | Radar not showing | Radar disabled | Enable Radar Enabled in the RADAR tab |
 
 ---
 
 ## Changelog
+
+### v1.5.0 - Clean startup, aimbot consistency fix
+
+- **Removed all startup dialogs** -- no game directory prompt, no GitHub download check, no camouflage opt-in dialog. Tool launches silently.
+- **Aimbot consistency fix** -- `_aim_at()` now uses the same camera data as `_find_best_target()` instead of re-fetching, eliminating aim drift.
+- **Cleanup** -- removed all debug/test scripts, dnSpy decompiler, reverse-engineered DLLs from the project folder.
+- **Updated .gitignore** -- comprehensive ignore patterns for all debug scripts.
 
 ### v1.4.1 - CI auto-build + Close button + __main__ fix
 
@@ -194,21 +138,17 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 - **Prompt only once** -- dialog only shows if no release is found in the game directory.
 - **Already installed** -- no dialog at all, no GitHub API call, opens menu directly.
 - **First install** -- checks GitHub and asks "Install MecchaCamouflage?" with version info.
-- **No skips to menu** -- clicking No opens menu immediately.
 - **Version tracking** -- .meccha_version file written to game directory after install.
 
 ### v1.3.0 - Camouflage optional (DEV) + auto-install prompt
 
 - **Camouflage is now disabled by default** -- user is asked at startup whether to enable it.
-- **Camouflage marked as DEV / experimental** -- clearly labelled throughout UI and README.
 - **Auto-install prompt** -- tool asks at startup whether to download the latest release from GitHub to the game directory.
-- **Startup dialogs** -- two Qt prompts at launch: camouflage opt-in and release download/install.
 
 ### v1.2.1 - Player count & snap line fixes
 
-- **Fix: Only 1-2 players detected** - Team filter default changed to False. Previously, players sharing the same character class as the local player were filtered out; this caused most or all enemies to be invisible in modes where everyone uses the same Blueprint class.
-- **Fix: Snap lines not drawing** - w2s() no longer returns None for off-screen positions. Snap lines now draw from screen bottom-center to the player angular position at the screen edge. On-screen elements (dots, health bars, labels) are clamped to the visible area.
-- **Added** clamp_screen() helper for clean off-screen element handling.
+- **Fix: Only 1-2 players detected** - Team filter default changed to False.
+- **Fix: Snap lines not drawing** - w2s() no longer returns None for off-screen positions.
 
 ### v1.2.0 - Tabbed UI
 

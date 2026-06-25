@@ -51,9 +51,7 @@
   "radar_size": 180,
   "radar_range": 5000.0,
   "radar_opacity": 160,
-  "camouflage_enabled": false,
-  "camouflage_sample_size": 10,
-  "camouflage_opacity": 200,
+  "game_directory": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\MECCA CHAMELEON\\Chameleon\\Binaries\\Win64",
   "bone_indices": {
     "head": 66,
     "neck_01": 65,

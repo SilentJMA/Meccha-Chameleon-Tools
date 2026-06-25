@@ -7,6 +7,7 @@ offset resolution, and game state reading.
 import struct
 import math
 import pymem
+import ctypes
 
 # ---------------------------------------------------------------------------
 # Bootstrap offsets: stable UObject/UStruct/FField layout
@@ -20,6 +21,8 @@ OFFSETS = {
     "FField::Next": 0x18,
     "FField::NamePrivate": 0x20,
     "FProperty::Offset_Internal": 0x44,
+    "UField::Next": 0x28,
+    "UStruct::Children": 0x48,
     "FCameraCacheEntry::POV": 0x10,
     "FMinimalViewInfo::Location": 0x0,
     "FMinimalViewInfo::Rotation": 0x18,
@@ -460,9 +463,6 @@ class MecchaESP:
         self._health_offsets = None
         self._shield_offsets = None
         self._bone_cache = {}
-        self._camo_cache = {}
-        self._tex_cache = {}      # texture_addr -> {data_ptr, size}
-
         # Pymem 1.14 compatibility aliases
         self.read_u64 = self.pm.read_longlong
         self.read_u32 = self.pm.read_ulong
@@ -603,690 +603,56 @@ class MecchaESP:
         radius = rfloat(self.pm, bounds_addr + 0x30)
         return origin, extent, radius
 
-    # -----------------------------------------------------------------------
-    # Component walking
-    # -----------------------------------------------------------------------
-    def _owned_components_offset(self):
-        key = "AActor::OwnedComponents"
-        cached = getattr(self, "_owned_components_off", None)
-        if cached is not None:
-            return cached
-        off = self.resolver.resolve("Actor", "OwnedComponents")
-        if off is None:
-            off = 0x1E0  # UE5.6 AActor::OwnedComponents (confirmed via comp_scan.py)
-        self._owned_components_off = off
-        return off
-
-    def walk_owned_components(self, actor):
-        off = self._owned_components_offset()
-        oc_addr = actor + off
-        data, count = read_tarray_ptr(self.pm, oc_addr)
-        if not data or count == 0 or count > 512:
+    # ------
+    def iter_players(self, include_local=True, team_filter=False):
+        world = self._get_world()
+        if not world:
             return
-        for i in range(count):
-            comp = rp(self.pm, data + i * 8)
-            if comp:
-                yield comp
-
-    def find_component_by_class(self, actor, class_name):
-        cname_lower = class_name.lower()
-        for comp in self.walk_owned_components(actor):
-            cn = self.objects.class_name(comp)
-            if cn.lower() == cname_lower:
-                return comp
-        return 0
-
-    def find_component_by_class_partial(self, actor, name_part):
-        for comp in self.walk_owned_components(actor):
-            cn = self.objects.class_name(comp)
-            if name_part in cn:
-                return comp
-        return 0
-
-    # -----------------------------------------------------------------------
-    # Bone / skeletal mesh reading
-    # -----------------------------------------------------------------------
-    BONE_CONNECTIONS = [
-        ("root", "pelvis"),
-        ("pelvis", "spine_01"),
-        ("spine_01", "spine_02"),
-        ("spine_02", "spine_03"),
-        ("spine_03", "neck_01"),
-        ("neck_01", "head"),
-        ("clavicle_l", "upperarm_l"),
-        ("upperarm_l", "lowerarm_l"),
-        ("lowerarm_l", "hand_l"),
-        ("clavicle_r", "upperarm_r"),
-        ("upperarm_r", "lowerarm_r"),
-        ("lowerarm_r", "hand_r"),
-        ("pelvis", "thigh_l"),
-        ("thigh_l", "calf_l"),
-        ("calf_l", "foot_l"),
-        ("pelvis", "thigh_r"),
-        ("thigh_r", "calf_r"),
-        ("calf_r", "foot_r"),
-    ]
-
-    COMMON_BONE_NAMES = [
-        "root", "pelvis",
-        "spine_01", "spine_02", "spine_03",
-        "neck_01", "head",
-        "clavicle_l", "upperarm_l", "lowerarm_l", "hand_l",
-        "clavicle_r", "upperarm_r", "lowerarm_r", "hand_r",
-        "thigh_l", "calf_l", "foot_l",
-        "thigh_r", "calf_r", "foot_r",
-    ]
-
-    def _resolve_bone_indices(self, skeletal_mesh):
-        """Try to map bone names -> indices via FName resolution on the skeleton."""
-        # Get bone names from the skeleton
-        # USkeletalMesh::RefSkeleton holds bone info
-        # We try: USkeletalMeshComponent->SkeletalMesh->RefSkeleton->GetRefBoneInfo()
-        mesh_ptr = rp(self.pm, skeletal_mesh + 0x4A0)
-        if not mesh_ptr:
-            return {}
-        ref_skeleton = mesh_ptr + 0xA0
-        bone_data, bone_count = read_tarray_ptr(self.pm, ref_skeleton)
-        if not bone_data or bone_count == 0 or bone_count > 512:
-            return {}
-        name_to_idx = {}
-        for i in range(bone_count):
-            name_idx = ru32(self.pm, bone_data + i * 0x20)
-            bone_name = self.objects.fnames.resolve(name_idx)
-            if bone_name:
-                name_to_idx[bone_name.lower()] = i
-        return name_to_idx
-
-    def get_skeletal_mesh(self, actor):
-        """Find USkeletalMeshComponent on the actor. Tries multiple class name patterns."""
-        # Try primary match first
-        mesh = self.find_component_by_class_partial(actor, "SkeletalMeshComponent")
-        if mesh:
-            return mesh
-        # Try broader patterns
-        for pattern in ("SkinnedMeshComponent", "MeshComponent", "SkeletalMesh"):
-            mesh = self.find_component_by_class_partial(actor, pattern)
-            if mesh:
-                return mesh
-        return 0
-
-    def get_bone_transforms(self, skeletal_mesh):
-        """Read ComponentSpaceTransforms TArray<FTransform> from USkeletalMeshComponent."""
-        if not skeletal_mesh:
-            return None
-        transforms_addr = skeletal_mesh + 0x5C0
-        data, count = read_tarray_ptr(self.pm, transforms_addr)
-        if not data or count == 0 or count > 1024:
-            return None
-        bones = []
-        for i in range(count):
-            offset = data + i * 0x50
-            try:
-                raw = self.pm.read_bytes(offset, 0x50)
-                qx, qy, qz, qw = struct.unpack("<dddd", raw[0:32])
-                tx, ty, tz = struct.unpack("<ddd", raw[32:56])
-                bones.append(((tx, ty, tz), (qx, qy, qz, qw)))
-            except Exception:
-                bones.append(None)
-        return bones
+        gs = rp(self.pm, world + self.offsets.get("UWorld::GameState", 0))
+        if not gs:
+            return
+        pa_data, pa_count, _ = read_array(self.pm, gs + self.offsets["AGameStateBase::PlayerArray"])
+        if not pa_data or pa_count == 0:
+            return
+        local_pc = self._get_local_controller(world)
+        local_pawn = 0
+        if local_pc:
+            local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
+        seen = set()
+        for i in range(pa_count):
+            ps = rp(self.pm, pa_data + i * 8)
+            if not ps or ps in seen:
+                continue
+            seen.add(ps)
+            pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
+            if not pawn:
+                continue
+            if not include_local and pawn == local_pawn:
+                continue
+            pos = self.get_actor_root_pos(pawn)
+            if pos is None:
+                continue
+            yield {
+                "is_local": pawn == local_pawn,
+                "pos": pos,
+                "actor": pawn,
+                "player_state": ps,
+                "idx": i,
+            }
 
     def get_skeleton_positions(self, actor):
-        """Return a dict of bone_name -> world_position for the actor."""
-        mesh = self.get_skeletal_mesh(actor)
-        if not mesh:
-            return None
-        transforms = self.get_bone_transforms(mesh)
-        if not transforms:
-            return None
-        name_map = self._resolve_bone_indices(mesh)
-        result = {}
-        for bname in self.COMMON_BONE_NAMES:
-            idx = name_map.get(bname.lower())
-            if idx is not None and idx < len(transforms) and transforms[idx]:
-                pos, _ = transforms[idx]
-                result[bname] = pos
-        return result
-
-    def get_skeleton_positions_by_indices(self, actor, bone_indices):
-        """Get bone positions by direct index map {name: index}."""
-        mesh = self.get_skeletal_mesh(actor)
-        if not mesh:
-            return None
-        transforms = self.get_bone_transforms(mesh)
-        if not transforms:
-            return None
-        result = {}
-        for name, idx in bone_indices.items():
-            if idx < len(transforms) and transforms[idx]:
-                pos, _ = transforms[idx]
-                result[name] = pos
-        return result
-
-    # -----------------------------------------------------------------------
-    # Player iteration (enhanced)
-    # -----------------------------------------------------------------------
-    def iter_players(self, include_local=False, team_filter=False):
-        world = self._get_world()
-        if not world:
-            return
-        gamestate = rp(self.pm, world + self.offsets["UWorld::GameState"])
-        pc = self._get_local_controller(world)
-        local_pawn = rp(self.pm, pc + self.offsets["APlayerController::AcknowledgedPawn"]) if pc else 0
-        local_ps = rp(self.pm, pc + self.offsets["AController::PlayerState"]) if pc else 0
-        local_pawn_cls = self.objects.class_name(local_pawn)
-
-        if include_local and local_pawn:
-            pos = self.get_actor_root_pos(local_pawn)
-            if pos:
-                yield {
-                    "is_local": True,
-                    "pos": pos,
-                    "idx": 0,
-                    "actor": local_pawn,
-                    "player_state": local_ps,
-                }
-
-        yielded = 0
-        if gamestate:
-            pa_data, pa_count, _ = read_array(self.pm, gamestate + self.offsets["AGameStateBase::PlayerArray"])
-            if pa_data and pa_count > 0:
-                for i in range(pa_count):
-                    ps = rp(self.pm, pa_data + i * 8)
-                    if not ps or ps == local_ps:
-                        continue
-                    pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
-                    if not pawn or pawn == local_pawn:
-                        continue
-                    pawn_cls = self.objects.class_name(pawn)
-                    if not pawn_cls:
-                        continue
-                    if team_filter and local_pawn_cls:
-                        if pawn_cls == local_pawn_cls:
-                            continue
-                        if "Spectate" in pawn_cls:
-                            continue
-                    pos = self.get_actor_root_pos(pawn)
-                    if not pos:
-                        continue
-                    yielded += 1
-                    yield {
-                        "is_local": False,
-                        "pos": pos,
-                        "idx": i,
-                        "actor": pawn,
-                        "player_state": ps,
-                    }
-
-        if yielded == 0:
-            persistent_level_off = self.resolver.resolve("World", "PersistentLevel") if hasattr(self, "resolver") else None
-            if persistent_level_off is None:
-                persistent_level_off = 0x30
-            level = rp(self.pm, world + persistent_level_off)
-            if level:
-                actors_off = self.resolver.resolve("Level", "Actors") if hasattr(self, "resolver") else None
-                if actors_off is None:
-                    actors_off = 0x98
-                actors_data, actors_count, _ = read_array(self.pm, level + actors_off)
-                if actors_data and actors_count > 0:
-                    for i in range(actors_count):
-                        actor = rp(self.pm, actors_data + i * 8)
-                        if not actor or actor == local_pawn:
-                            continue
-                        cls_name = self.objects.class_name(actor)
-                        if not cls_name or "Character" not in cls_name:
-                            continue
-                        pos = self.get_actor_root_pos(actor)
-                        if not pos:
-                            continue
-                        yielded += 1
-                        yield {
-                            "is_local": False,
-                            "pos": pos,
-                            "idx": i,
-                            "actor": actor,
-                            "player_state": 0,
-                        }
-
-    # -----------------------------------------------------------------------
-    # Camouflage — 3D character color writing
-    # -----------------------------------------------------------------------
-    def _get_local_pawn(self):
-        """Get the local player pawn address."""
-        world = self._get_world()
-        if not world:
-            return 0
-        pc = self._get_local_controller(world)
-        if not pc:
-            return 0
-        return rp(self.pm, pc + self.offsets["APlayerController::AcknowledgedPawn"])
-
-    def _find_materials_offset(self, mesh_component):
-        """Brute-force find the Materials TArray offset on a mesh component."""
-        for off in (0x4D0, 0x4E0, 0x4F0, 0x500, 0x510, 0x4C0, 0x4B0, 0x4A8):
-            try:
-                data, count = read_tarray_ptr(self.pm, mesh_component + off)
-                if data and 0 < count <= 32:
-                    first = rp(self.pm, data)
-                    if first and first > 0x100000:
-                        return off
-            except Exception:
-                continue
         return None
 
-    def _get_mesh_materials(self, mesh_component):
-        """Get material instance pointers from a mesh component.
-        Tries a wide range of offsets for the Materials TArray."""
-        # Broader offset range for Materials TArray
-        for off in range(0x480, 0x5C0, 8):
-            try:
-                data, count = read_tarray_ptr(self.pm, mesh_component + off)
-                if data and 1 <= count <= 32:
-                    first = rp(self.pm, data)
-                    if first and first > 0x100000:
-                        mats = []
-                        for i in range(count):
-                            mat = rp(self.pm, data + i * 8)
-                            if mat:
-                                mats.append(mat)
-                        if mats:
-                            return mats
-            except Exception:
-                continue
-        return []
+    def get_skeleton_positions_by_indices(self, actor, indices):
+        return None
 
-    def _find_color_parameter(self, material):
-        """Brute-force find a vector parameter with valid FLinearColor on a material instance.
-        Only returns addresses verified to be within the TArray data bounds."""
-        # Wider range of offsets for VectorParameterValues TArray
-        for off in range(0x30, 0x180, 8):
-            try:
-                data, count = read_tarray_ptr(self.pm, material + off)
-                if not data or count == 0 or count > 64:
-                    continue
-                # Try multiple struct strides
-                for stride in (0x18, 0x20, 0x28, 0x30, 0x38, 0x40):
-                    data_end = data + count * stride
-                    for j in range(min(count, 32)):
-                        param_addr = data + j * stride
-                        # Try FLinearColor at known field offsets within the struct
-                        for color_off in (0x08, 0x0C, 0x10, 0x14, 0x18, 0x1C, 0x20):
-                            color_addr = param_addr + color_off
-                            # CRITICAL: only accept addresses inside the TArray data range
-                            if not (data <= color_addr < data_end and color_addr + 16 <= data_end):
-                                continue
-                            try:
-                                raw = self.pm.read_bytes(color_addr, 16)
-                                if len(raw) < 16:
-                                    continue
-                                r, g, b, a = struct.unpack("ffff", raw)
-                                if (0.0 <= r <= 1.0 and 0.0 <= g <= 1.0 and 0.0 <= b <= 1.0 and
-                                    0.0 <= a <= 1.0 and not (math.isnan(r) or math.isnan(g) or math.isnan(b) or math.isnan(a))):
-                                    return color_addr, (r, g, b, a)
-                            except Exception:
-                                continue
-            except Exception:
-                continue
-        return None, None
-
-    # -----------------------------------------------------------------------
-    # RuntimePaintableComponent helpers — texture-based paint
-    # -----------------------------------------------------------------------
-    def _find_runtime_paint_component(self, pawn):
-        """Walk owned components for RuntimePaintableComponent (fast, no global GObjects scan).
-        The global GObjects scan was removed because it freezes for ~60 seconds."""
-        for comp in self.walk_owned_components(pawn):
-            cname = self.objects.class_name(comp)
-            if cname and "RuntimePaintableComponent" in cname:
-                return comp
-        return 0
-
-    def _find_texture_on_component(self, pawn):
-        """By the mod source, the component stores paint textures.
-        Walk ALL properties of RuntimePaintableComponent and find
-        any that point to a UTexture."""
-        comp = self._find_runtime_paint_component(pawn)
-        if not comp:
-            return 0
-        cls = self.objects.obj_class(comp)
-        if not cls:
-            return 0
-        # Walk ALL ChildProperties looking for object pointers to textures
-        prop = rp(self.pm, cls + self.offsets["UStruct::ChildProperties"])
-        while prop:
-            try:
-                off = ru32(self.pm, prop + self.offsets["FProperty::Offset_Internal"])
-                if 0 < off < 0x600:
-                    val = rp(self.pm, comp + off)
-                    if val and val > 0x100000:
-                        cname = self.objects.class_name(val)
-                        if cname and "Texture" in cname:
-                            return val
-            except Exception:
-                pass
-            prop = rp(self.pm, prop + self.offsets["FField::Next"])
-        return 0
-
-    def _write_texture_flat(self, texture, r_byte, g_byte, b_byte, a_byte=255):
-        """Write a uniform color to a UTexture2D mip 0 bulk data.
-        Uses class property walk for PlatformData, then smart narrow-range search
-        for Mips/BulkData/Data. Caches found addresses for instant subsequent calls.
-        Values 0-255, writes BGRA (common UE5 texture byte order)."""
-        # Check cache first (instant after first hit)
-        if texture in self._tex_cache:
-            cached = self._tex_cache[texture]
-            try:
-                sz = cached["size"]
-                pixels = bytearray([b_byte, g_byte, r_byte, a_byte]) * (sz // 4)
-                self.pm.write_bytes(cached["data_ptr"], bytes(pixels), sz)
-                return True
-            except Exception:
-                del self._tex_cache[texture]
-
-        # 1. Find PlatformData offset by walking texture class properties
-        cls = self.objects.obj_class(texture)
-        if not cls:
+    # ------
+    def camo_apply(self, r=None, g=None, b=None, a=None):
+        try:
+            VK_F10 = 0x79
+            u = __import__('ctypes').windll.user32
+            u.keybd_event(VK_F10, 0, 0, 0)
+            u.keybd_event(VK_F10, 0, 2, 0)
+            return True
+        except:
             return False
-        name, pd_off = self.resolver.search_properties(cls, ["PlatformData"])
-        if not name or pd_off < 0:
-            return False
-        pd = rp(self.pm, texture + pd_off)
-        if not pd or pd < 0x100000:
-            return False
-
-        # 2. Find Mips TArray in FTexturePlatformData (smart narrow range)
-        for mips_off in range(0x08, 0x48, 4):
-            try:
-                mips_data, mips_count = read_tarray_ptr(self.pm, pd + mips_off)
-                if not mips_data or mips_count < 1 or mips_count > 16 or mips_data < 0x100000:
-                    continue
-                mip = rp(self.pm, mips_data)
-                if not mip or mip < 0x100000:
-                    continue
-                # 3. Find BulkData within FTexture2DMipMap
-                for bulk_off in (0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38):
-                    try:
-                        bulk = rp(self.pm, mip + bulk_off)
-                        if not bulk or bulk < 0x100000:
-                            continue
-                        # 4. Find Data pointer within FByteBulkData
-                        for data_off in range(0x00, 0x30, 8):
-                            dptr = rp(self.pm, bulk + data_off)
-                            if not dptr or dptr < 0x100000:
-                                continue
-                            # 5. Find Size within FByteBulkData
-                            for size_off in range(0x08, 0x38, 8):
-                                try:
-                                    raw = self.pm.read_bytes(bulk + size_off, 8)
-                                    sz = struct.unpack("<Q", raw)[0]
-                                    if 256 <= sz <= 67108864:
-                                        pixels = bytearray([b_byte, g_byte, r_byte, a_byte]) * (sz // 4)
-                                        self.pm.write_bytes(dptr, bytes(pixels), sz)
-                                        self._tex_cache[texture] = {"data_ptr": dptr, "size": sz}
-                                        return True
-                                except Exception:
-                                    continue
-                    except Exception:
-                        continue
-            except Exception:
-                continue
-        return False
-
-    def _get_component_property_ptr(self, comp, prop_name):
-        """Walk an object's class ChildProperties to find a named property,
-        then read the pointer value at that offset on the instance."""
-        cls = self.objects.obj_class(comp)
-        if not cls:
-            return 0
-        prop = rp(self.pm, cls + self.offsets["UStruct::ChildProperties"])
-        while prop:
-            try:
-                pname = self.objects.fnames.resolve(
-                    ru32(self.pm, prop + self.offsets["FField::NamePrivate"]))
-                if pname == prop_name:
-                    off = ru32(self.pm, prop + self.offsets["FProperty::Offset_Internal"])
-                    if off:
-                        return rp(self.pm, comp + off)
-            except Exception:
-                pass
-            prop = rp(self.pm, prop + self.offsets["FField::Next"])
-        return 0
-
-    def read_camouflage_color(self, actor):
-        """Read the current color from the pawn's material. Uses cache for speed."""
-        if actor in self._camo_cache:
-            cached = self._camo_cache[actor]
-            if cached["orig_color"] is not None:
-                return cached["orig_color"]
-        try:
-            mesh = self.get_skeletal_mesh(actor)
-            if not mesh:
-                return None
-            for mat in self._get_mesh_materials(mesh):
-                color_addr, orig = self._find_color_parameter(mat)
-                if color_addr:
-                    result = (int(orig[0]*255), int(orig[1]*255), int(orig[2]*255))
-                    if actor not in self._camo_cache:
-                        self._camo_cache[actor] = {"color_addr": color_addr, "orig_color": result}
-                    else:
-                        self._camo_cache[actor]["orig_color"] = result
-                    return result
-            color_names = ["CharacterColor", "BodyColor", "CamouflageColor", "CurrentColor",
-                           "SkinColor", "MeshColor", "PlayerColor", "TeamColor", "Color"]
-            cls = self.objects.obj_class(actor)
-            if cls:
-                name, off = self.resolver.search_properties(cls, color_names)
-                if name and off >= 0:
-                    orig = struct.unpack("ffff", self.pm.read_bytes(actor + off, 16))
-                    result = (int(orig[0]*255), int(orig[1]*255), int(orig[2]*255))
-                    self._camo_cache[actor] = {"color_addr": actor + off, "orig_color": result}
-                    return result
-            return None
-        except Exception:
-            return None
-
-    def _find_paintatuv_function(self, actor):
-        # Dynamically find PaintAtUV UFunction
-        try:
-            comp = self._find_runtime_paint_component(actor)
-            if not comp: return 0
-            cls = self.objects.obj_class(comp)
-            if not cls: return 0
-            while cls:
-                children = self.objects.resolve(cls, "Children")
-                if not children:
-                    cls = self.objects.obj_class(self.pm.read_u64(cls + 8))
-                    continue
-                child_list_ptr = self.pm.read_u64(children)
-                if not child_list_ptr:
-                    cls = self.objects.obj_class(self.pm.read_u64(cls + 8))
-                    continue
-                child_count = self.pm.read_u32(child_list_ptr + 20)
-                child_array = self.pm.read_u64(child_list_ptr + 8)
-                for i in range(child_count):
-                    child = self.pm.read_u64(child_array + i * 8)
-                    if not child: continue
-                    child_cls = self.objects.obj_class(child)
-                    if not child_cls: continue
-                    child_cls_name = self.objects.class_name(child_cls)
-                    if child_cls_name == "Function":
-                        fname = self.resolve_field_name(child)
-                        if fname and "PaintAtUV" in fname:
-                            return child
-                cls = self.objects.obj_class(self.pm.read_u64(cls + 8))
-            return 0
-        except Exception: return 0
-
-    def _build_paintatuv_params(self, r, g, b):
-        buf = bytearray(72)
-        struct.pack_into("fff", buf, 16, 0.5, 0.5, 0.0)
-        r_lin = max(0.0, min(1.0, r / 255.0))
-        g_lin = max(0.0, min(1.0, g / 255.0))
-        b_lin = max(0.0, min(1.0, b / 255.0))
-        struct.pack_into("ffff", buf, 28, r_lin, g_lin, b_lin, 1.0)
-        return bytes(buf)
-
-    PAINT_SHELLCODE = None
-
-    def _make_shellcode_call(self, vtable_offset=None):
-        import struct
-        if self.PAINT_SHELLCODE is not None: return self.PAINT_SHELLCODE
-        if vtable_offset is None:
-            vtable_offset = getattr(self, "PROCESSEVENT_VTABLE_OFF", 72 * 8)
-        sc = bytes([
-            0x48, 0x83, 0xEC, 0x28,
-            0x48, 0x8B, 0x01,
-            0x48, 0x8B, 0x51, 0x08,
-            0x4C, 0x8B, 0x41, 0x10,
-            0x48, 0x8B, 0x08,
-            0x48, 0xFF, 0xA1,
-        ])
-        sc += struct.pack("<I", vtable_offset)
-        sc += bytes([0x90])
-        self.PAINT_SHELLCODE = bytes(sc)
-        return self.PAINT_SHELLCODE
-
-    def _paint_via_process_event(self, actor, r, g, b, vtable_offset=None, timeout_ms=8000):
-        import ctypes
-        comp = self._find_runtime_paint_component(actor)
-        if not comp: return False
-        paintatuv_func = self._find_paintatuv_function(actor)
-        if not paintatuv_func: return False
-        params_bytes = self._build_paintatuv_params(r, g, b)
-        sc = self._make_shellcode_call(vtable_offset)
-        sc_len, args_len, params_len = len(sc), 24, len(params_bytes)
-        total = sc_len + args_len + params_len
-        alloc = self.pm.allocate(total)
-        if not alloc: return False
-        args_addr, params_addr = alloc + sc_len, alloc + sc_len + args_len
-        try:
-            self.pm.write_bytes(alloc, sc, sc_len)
-            args_block = struct.pack("<QQQ", comp, paintatuv_func, params_addr)
-            self.pm.write_bytes(args_addr, args_block, args_len)
-            self.pm.write_bytes(params_addr, params_bytes, params_len)
-            thread = self.pm.start_thread(alloc, args_addr)
-            if not thread: return False
-            k32 = ctypes.windll.kernel32
-            wait_result = k32.WaitForSingleObject(thread, timeout_ms)
-            proc_exit = ctypes.c_ulong(0)
-            k32.GetExitCodeProcess(self.pm.process_handle, ctypes.byref(proc_exit))
-            k32.CloseHandle(thread)
-            self.pm.free(alloc)
-            if proc_exit.value != 259: return False
-            return wait_result == 0
-        except Exception:
-            try: self.pm.free(alloc)
-            except: pass
-            return False
-
-    def _paint_shellcode_try_indices(self, actor, r, g, b):
-        vtable_offsets = [
-            getattr(self, "PROCESSEVENT_VTABLE_OFF", 72 * 8),
-            73 * 8, 66 * 8, 64 * 8, 65 * 8, 67 * 8,
-        ]
-        for vtoff in vtable_offsets:
-            try:
-                if self._paint_via_process_event(actor, r, g, b, vtable_offset=vtoff, timeout_ms=2000):
-                    return True
-            except Exception:
-                continue
-        return False
-
-    def set_camouflage_color(self, actor, r, g, b):
-        """Set camouflage color by writing directly to the paint texture.
-        Main approach: find RuntimePaintableComponent → find paint texture → write mip0 data.
-        Falls back to mesh material params if texture not found.
-        Caches everything for instant subsequent toggles."""
-        r_byte = max(0, min(255, int(b)))      # BGRA order for UE5
-        g_byte = max(0, min(255, int(g)))
-        b_byte = max(0, min(255, int(r)))
-        r_lin = max(0.0, min(1.0, r / 255.0))
-        g_lin = max(0.0, min(1.0, g / 255.0))
-        b_lin = max(0.0, min(1.0, b / 255.0))
-        col_packed = struct.pack("ffff", r_lin, g_lin, b_lin, 1.0)
-
-        # -- Check cached color param address first (instant) --
-        if actor in self._camo_cache:
-            cached = self._camo_cache[actor]
-            if cached.get("color_addr"):
-                try:
-                    self.pm.write_bytes(cached["color_addr"], col_packed, 16)
-                    return True
-                except Exception:
-                    del self._camo_cache[actor]
-
-        # -- Method 0: Shellcode injection via ProcessEvent --
-        try:
-            if self._paint_shellcode_try_indices(actor, r, g, b):
-                self._camo_cache[actor] = {"color_addr": None}
-                return True
-        except Exception:
-            pass
-
-        # -- Method 1: Paint texture write (matches the mod's approach) --
-        try:
-            comp = self._find_runtime_paint_component(actor)
-            if comp:
-                cls = self.objects.obj_class(comp)
-                tex = None
-                if cls:
-                    tex = self._find_texture_on_component(actor)
-                if tex:
-                    if self._write_texture_flat(tex, r_byte, g_byte, b_byte):
-                        self._camo_cache[actor] = {"color_addr": None}
-                        return True
-                for hint in ("ColorAndOpacity", "Color", "Tint", "BaseColor", "PaintColor"):
-                    ptr = self._get_component_property_ptr(comp, hint)
-                    if ptr:
-                        self.pm.write_bytes(ptr, col_packed, 16)
-                        self._camo_cache[actor] = {"color_addr": ptr}
-                        return True
-        except Exception:
-            pass
-
-        # -- Method 2: Mesh material vector parameters --
-        try:
-            mesh = self.get_skeletal_mesh(actor)
-            if mesh:
-                for mat in self._get_mesh_materials(mesh):
-                    addr, orig = self._find_color_parameter(mat)
-                    if addr:
-                        self.pm.write_bytes(addr, col_packed, 16)
-                        self._camo_cache[actor] = {
-                            "color_addr": addr,
-                            "orig_color": (int(orig[0]*255), int(orig[1]*255), int(orig[2]*255)),
-                        }
-                        return True
-        except Exception:
-            pass
-
-        # -- Method 3: Named color/tint properties on pawn/component --
-        try:
-            cls = self.objects.obj_class(actor)
-            if cls:
-                hints = ["color", "tint", "body", "skin", "paint", "base", "diffuse",
-                         "albedo", "mask", "channel", "rgb", "ambient", "emissive",
-                         "custom", "primary", "team", "character"]
-                comp = self._find_runtime_paint_component(actor)
-                if comp:
-                    comp_cls = self.objects.obj_class(comp)
-                    if comp_cls:
-                        name, off = self.resolver.search_properties(comp_cls, hints)
-                        if name and off >= 0:
-                            try:
-                                self.pm.write_bytes(comp + off, col_packed, 16)
-                                self._camo_cache[actor] = {"color_addr": comp + off}
-                                return True
-                            except Exception:
-                                pass
-                name, off = self.resolver.search_properties(cls, hints)
-                if name and off >= 0:
-                    try:
-                        self.pm.write_bytes(actor + off, col_packed, 16)
-                        self._camo_cache[actor] = {"color_addr": actor + off}
-                        return True
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        return False

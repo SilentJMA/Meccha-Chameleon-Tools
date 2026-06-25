@@ -352,14 +352,14 @@ class Menu(QWidget):
                 background: #22223a; color: #aaa;
             }
         """)
-        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"])
+        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","COLORS"])
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background: transparent;")
 
         self._pages = {}
-        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"]:
+        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]:
             page = QWidget()
             page.setStyleSheet("background: transparent;")
             self._pages[tab_name] = page
@@ -397,10 +397,9 @@ class Menu(QWidget):
         self._build_radar_tab()
         self._build_aimbot_tab()
         self._build_colors_tab()
-        self._build_camouflage_tab()
 
     def _switch_tab(self, idx):
-        names = ["ESP","HEALTH","RADAR","AIMBOT","COLORS","CAMOUFLAGE"]
+        names = ["ESP","HEALTH","RADAR","AIMBOT","COLORS"]
         if 0 <= idx < len(names):
             self.stack.setCurrentIndex(idx)
 
@@ -547,45 +546,6 @@ class Menu(QWidget):
         lo.addWidget(self.btn_skeleton_color)
         lo.addStretch()
 
-    def _build_camouflage_tab(self):
-        p = self._pages["CAMOUFLAGE"]
-        lo = QVBoxLayout(p)
-        lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
-
-        self.cb_camo = self._chk("Camouflage Enabled (WIP - In Progress)","camouflage_enabled")
-        lo.addWidget(self.cb_camo)
-
-        lbl = QLabel("Press F10 to sample and apply camouflage (WIP)")
-        lbl.setStyleSheet("color: #888; font-size: 10px; padding: 4px 0;")
-        lo.addWidget(lbl)
-
-        sr = QHBoxLayout()
-        sr.addWidget(QLabel("Sample Grid:"))
-        self.spn_camo_size = QSpinBox()
-        self.spn_camo_size.setRange(3, 30)
-        self.spn_camo_size.setValue(self.config.camouflage_sample_size)
-        self.spn_camo_size.valueChanged.connect(lambda v: setattr(self.config, "camouflage_sample_size", v))
-        sr.addWidget(self.spn_camo_size)
-        sr.addWidget(QLabel("(N×N pixels, centered on crosshair)"))
-        lo.addLayout(sr)
-
-        # Opacity slider
-        or_ = QHBoxLayout()
-        or_.addWidget(QLabel("Blend:"))
-        self.sld_camo_opacity = QSlider(Qt.Horizontal)
-        self.sld_camo_opacity.setRange(0, 255)
-        self.sld_camo_opacity.setValue(self.config.camouflage_opacity)
-        self.sld_camo_opacity.valueChanged.connect(lambda v: setattr(self.config, "camouflage_opacity", v))
-        or_.addWidget(self.sld_camo_opacity)
-        self.lbl_camo_val = QLabel(str(self.config.camouflage_opacity))
-        self.lbl_camo_val.setStyleSheet("color: #eee; font-size: 11px; min-width: 30px;")
-        self.sld_camo_opacity.valueChanged.connect(lambda v: self.lbl_camo_val.setText(str(v)))
-        or_.addWidget(self.lbl_camo_val)
-        lo.addLayout(or_)
-
-        lo.addStretch()
-
     def _chk(self, text, attr):
         cb = QCheckBox(text)
         cb.setChecked(getattr(self.config, attr))
@@ -643,24 +603,8 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setWindowTitle("Meccha Chameleon Tools - Overlay")
         self._key_states = {}
-        self._camouflage_active = False
-        self._camouflage_color = None  # Tuple[int,int,int] when sampled
-        self._camo_key_held = False    # edge detection for F10
-        self._camo_feedback = ""       # brief status text ("Sampling...", "Camo ON", etc.)
-        self._camo_feedback_count = 0
-        self._original_pawn_color = None  # (r,g,b) to restore when camo toggled off
-        self._paint_indicator_active = False  # True when C++ mod paint pipeline is running
-        self._paint_indicator_start = 0.0     # time.time() when paint started
-        self._paint_indicator_est_sec = 10.0  # estimated duration (reduced from 60s)
-        # F9 direct texture paint (independent of mod's F10 camo)
-        self._f9_key_held = False
-        self._f9_color = None        # (r,g,b) last sampled color  
         self._f9_feedback = ""
         self._f9_feedback_count = 0
-        self._paint_tiles = None       # list of (offset, data) for tile writes
-        self._paint_tile_cursor = 0
-        self._paint_tile_total = 0
-
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
         self.timer.start(16)
@@ -708,246 +652,15 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
-
-        # Camouflage hotkey (F10)
-        VK_F10 = 0x79
-        f10_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F10) & 0x8000)
-        if f10_down and not self._camo_key_held:
-            if self.config.camouflage_enabled:
-                self._toggle_camouflage()
-                # Only show paint indicator when camouflage was actually toggled
-                if self._camouflage_active:
-                    self._paint_indicator_active = True
-                    self._paint_indicator_start = time.time()
-            else:
-                # Brief feedback that camouflage is disabled
-                self._camo_feedback = "CAMO DISABLED (Enable in menu)"
-                self._camo_feedback_count = 120  # ~2 seconds
-        self._camo_key_held = f10_down
-
-        # F9: sample color and start tile-based texture paint
+        # F9: Photo paint
         VK_F9 = 0x78
         f9_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
-        if f9_down and not self._f9_key_held:
-            self._trigger_f9_paint()
-        self._f9_key_held = f9_down
-
-    def _toggle_camouflage(self):
-        """Toggle camouflage on/off. When turning on, sample screen and write to 3D model."""
-        if self._camouflage_active:
-            # Turn OFF: restore original color
-            restored = False
-            if self._original_pawn_color:
-                local_pawn = self.esp._get_local_pawn()
-                if local_pawn:
-                    r, g, b = self._original_pawn_color
-                    restored = self.esp.set_camouflage_color(local_pawn, r, g, b)
-            self._camouflage_active = False
-            self._camouflage_color = None
-            self._original_pawn_color = None
-            self._camo_feedback = "RESTORED" if restored else "CAMO OFF"
-            self._camo_feedback_count = 120
-        else:
-            # Turn ON: sample screen and apply to local pawn
-            self._camo_feedback = "SAMPLING..."
-            self._camo_feedback_count = 60
-            color = self._sample_screen_color()
-            if not color:
-                self._camo_feedback = "SAMPLE FAIL"
-                self._camo_feedback_count = 120
-                return
-
-            r, g, b = color
-            local_pawn = self.esp._get_local_pawn()
-            if not local_pawn:
-                self._camo_feedback = "NO PAWN FOUND"
-                self._camo_feedback_count = 120
-                return
-
-            # Save original color
-            orig = self.esp.read_camouflage_color(local_pawn)
-            if orig:
-                self._original_pawn_color = orig
-
-            # Apply new color to 3D model
-            ok = self.esp.set_camouflage_color(local_pawn, r, g, b)
-            if ok:
-                self._camouflage_color = color
-                self._camouflage_active = True
-                self._camo_feedback = "CAMO ON"
-                self._camo_feedback_count = 150
-            else:
-                self._camo_feedback = "MATL FAIL"
-                self._camo_feedback_count = 120
-
-    def _sample_screen_color(self):
-        """Sample N×N pixels around crosshair. Tries game DC, desktop DC, then BitBlt fallback."""
-        try:
-            import win32gui
-            w = self.width()
-            h = self.height()
-            if w < 100 or h < 100:
-                return None
-            cx, cy = w // 2, h // 2
-            grid = self.config.camouflage_sample_size
-            half = grid // 2
-
-            # Try game window DC first, then desktop DC
-            hdc = None
-            hwnd_used = 0
-            if self.game_hwnd:
-                hdc = win32gui.GetDC(self.game_hwnd)
-                hwnd_used = self.game_hwnd
-            if not hdc:
-                hdc = win32gui.GetDC(0)
-            if not hdc:
-                return None
-
-            total = 0
-            r_sum = g_sum = b_sum = 0
-            CLR_INVALID = 0xFFFFFFFF
-            for dx in range(-half, half + 1):
-                for dy in range(-half, half + 1):
-                    px = cx + dx * 4
-                    py = cy + dy * 4
-                    pixel = win32gui.GetPixel(hdc, px, py)
-                    if pixel != CLR_INVALID:
-                        r_sum += pixel & 0xFF
-                        g_sum += (pixel >> 8) & 0xFF
-                        b_sum += (pixel >> 16) & 0xFF
-                        total += 1
-
-            win32gui.ReleaseDC(hwnd_used, hdc)
-
-            if total > 0:
-                return (r_sum // total, g_sum // total, b_sum // total)
-
-            # Fallback: BitBlt the crosshair region
-            return self._sample_screen_bitblt(cx, cy, half)
-        except Exception:
-            return None
-
-    def _sample_screen_bitblt(self, cx, cy, half):
-        """Fallback: capture region via BitBlt then read pixels."""
-        try:
-            import win32gui, win32ui, win32con
-            hwnd = self.game_hwnd if self.game_hwnd else 0
-            hdc_src = win32gui.GetDC(hwnd) if hwnd else win32gui.GetDC(0)
-            if not hdc_src:
-                return None
-
-            step = 4
-            region_w = (half * 2 + 1) * step
-            region_h = (half * 2 + 1) * step
-            x0 = cx - half * step
-            y0 = cy - half * step
-
-            hdc_mem = win32gui.CreateCompatibleDC(hdc_src)
-            bmp = win32gui.CreateCompatibleBitmap(hdc_src, region_w, region_h)
-            win32gui.SelectObject(hdc_mem, bmp)
-
-            win32gui.BitBlt(hdc_mem, 0, 0, region_w, region_h,
-                           hdc_src, x0, y0, win32con.SRCCOPY)
-
-            # Read pixels: GetBitmapBits returns bytes (BGR format)
-            bits = win32gui.GetBitmapBits(bmp, True)
-
-            win32gui.DeleteObject(bmp)
-            win32gui.DeleteDC(hdc_mem)
-            win32gui.ReleaseDC(hwnd, hdc_src)
-
-            total = 0
-            r_sum = g_sum = b_sum = 0
-            stride = region_w * 4
-            for dy in range(0, region_h, step):
-                for dx in range(0, region_w, step):
-                    idx = dy * stride + dx * 4
-                    if idx + 3 < len(bits):
-                        # BMP stores BGR, we want RGB
-                        b = bits[idx]
-                        g = bits[idx + 1]
-                        r = bits[idx + 2]
-                        r_sum += r
-                        g_sum += g
-                        b_sum += b
-                        total += 1
-
-            if total == 0:
-                return None
-            return (r_sum // total, g_sum // total, b_sum // total)
-        except Exception:
-            return None
-
-    def _trigger_f9_paint(self):
-        """F9 direct paint: sample screen color, write to paint texture."""
-        self._f9_feedback = "PIX..."
-        self._f9_feedback_count = 5
-        color = self._sample_screen_color()
-        if not color:
-            self._f9_feedback = "NO SAMPLE"
-            self._f9_feedback_count = 20
-            return
-        r, g, b = color
-        self._f9_color = (r, g, b)
-        local_pawn = self.esp._get_local_pawn()
-        if not local_pawn:
-            self._f9_feedback = "NO PAWN"
-            self._f9_feedback_count = 20
-            return
-        # Try direct paint — this uses the texture write in set_camouflage_color
-        ok = self.esp.set_camouflage_color(local_pawn, r, g, b)
-        if ok:
-            self._f9_feedback = f"PIX OK ({r},{g},{b})"
-            self._f9_feedback_count = 30
-            # Now queue tile-progressive paint for the visual "bit by bit" effect
-            self._queue_tile_paint(local_pawn, r, g, b)
-        else:
-            self._f9_feedback = "PIX FAIL"
-            self._f9_feedback_count = 20
-
-    def _queue_tile_paint(self, pawn, r, g, b):
-        """For F9 tile-progressive mode: find texture, split into tiles, queue writes.
-        Each frame writes one tile, creating a 'painting' effect on the model."""
-        comp = self.esp._find_runtime_paint_component(pawn)
-        if not comp:
-            return
-        tex = None
-        cls = self.esp.objects.obj_class(comp)
-        if cls:
-            tex = self.esp._find_texture_on_component(pawn)
-        if not tex:
-            return
-        # Check tex_cache first
-        if tex in self.esp._tex_cache:
-            cached = self.esp._tex_cache[tex]
-            dptr = cached["data_ptr"]
-            sz = cached["size"]
-        else:
-            # Force cache by writing once more
-            self.esp._write_texture_flat(tex, b, g, r)
-            if tex not in self.esp._tex_cache:
-                return
-            cached = self.esp._tex_cache[tex]
-            dptr = cached["data_ptr"]
-            sz = cached["size"]
-        # Split into tiles (16x16 grid)
-        b_val = int(b)
-        g_val = int(g)
-        r_val = int(r)
-        tile_count = 16
-        tile_sz = sz // tile_count
-        tiles = []
-        for i in range(tile_count):
-            offset = i * tile_sz
-            actual_sz = tile_sz if i < tile_count - 1 else sz - offset
-            # Build tile data
-            tile_data = bytearray([b_val, g_val, r_val, 255]) * (actual_sz // 4)
-            tiles.append((dptr + offset, bytes(tile_data)))
-        self._paint_tiles = tiles
-        self._paint_tile_cursor = 0
-        self._paint_tile_total = len(tiles)
-        self._f9_feedback = f"TILES {self._paint_tile_total}"
-        self._f9_feedback_count = 10
+        if f9_down and not self._key_states.get("f9"):
+            self._trigger_photo_paint()
+        self._key_states["f9"] = f9_down
+        # Decrement F9 feedback counter every poll tick
+        if self._f9_feedback_count > 0:
+            self._f9_feedback_count -= 1
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -969,13 +682,11 @@ class Overlay(QWidget):
             painter.drawText(10, 20, "NO CAMERA")
             return
 
-        # Gather all player data
         all_players = list(self.esp.iter_players(
             include_local=self.config.show_local,
             team_filter=self.config.team_filter,
         ))
 
-        # Get local player position for radar
         local_pos = None
         if all_players:
             for p in all_players:
@@ -983,7 +694,6 @@ class Overlay(QWidget):
                     local_pos = p["pos"]
                     break
 
-        # Draw each player
         for pdata in all_players:
             is_local = pdata["is_local"]
             pos = pdata["pos"]
@@ -991,14 +701,12 @@ class Overlay(QWidget):
             ps = pdata["player_state"]
             idx = pdata["idx"]
 
-            # Distance scaling
             d = dist(pos, cam["loc"])
             scale = 1.0
             if self.config.distance_scaling and d > 0:
                 scale = self.config.scale_reference_dist / d
                 scale = max(0.3, min(scale, 3.0))
 
-            # Project center position
             screen_center = w2s(pos, cam, w, h)
             if not screen_center:
                 continue
@@ -1007,48 +715,32 @@ class Overlay(QWidget):
             sy += self.config.box_y_offset
             if is_local:
                 color = self.config.local_color
-            elif self._camouflage_active and self._camouflage_color:
-                blend = self.config.camouflage_opacity / 255.0
-                camo = self._camouflage_color
-                orig = self.config.enemy_color
-                color = (
-                    int(camo[0] * blend + orig[0] * (1 - blend)),
-                    int(camo[1] * blend + orig[1] * (1 - blend)),
-                    int(camo[2] * blend + orig[2] * (1 - blend)),
-                )
             else:
                 color = self.config.enemy_color
 
-            # Clamped coords for on-screen elements (dots, bars, labels)
-            # Snap lines use raw sx/sy so they reach screen edges
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
 
-            # Dot ESP
             if self.config.dot_esp:
                 radius = int(self.config.dot_radius * scale)
                 self._draw_dot(painter, dsx, dsy, max(2, radius), color)
 
-            # 2D Box ESP
             if self.config.box_esp:
                 rot = self.esp.get_actor_root_rotation(actor) if actor else None
                 hw = self.config.box_height_world / 3.0
                 draw_2d_box(painter, pos, cam, w, h,
                             self.config.box_height_world, hw, rot, color, scale)
 
-            # Skeleton ESP
             if self.config.skeleton_esp and actor and not is_local:
                 bones = self.esp.get_skeleton_positions(actor)
                 if bones:
                     draw_skeleton(painter, bones, cam, w, h, self.config.skeleton_color)
                 else:
-                    # Fallback: try indexed bones
                     indices = self.config.bone_indices
                     bones2 = self.esp.get_skeleton_positions_by_indices(actor, indices)
                     if bones2:
                         draw_skeleton(painter, bones2, cam, w, h, self.config.skeleton_color)
 
-            # Health / Shield bars
             if self.config.health_bar or self.config.shield_bar:
                 health_info = self.esp.get_health(actor, ps)
                 if health_info and health_info[0] is not None:
@@ -1057,12 +749,10 @@ class Overlay(QWidget):
                     bar_y = dsy - 20 * scale
                     draw_health_bar(painter, bar_x, bar_y, 24 * scale, 4, hp, sh if self.config.shield_bar else None)
 
-            # Snap lines
             if self.config.snap_lines:
                 painter.setPen(QPen(QColor(*color), 1))
                 painter.drawLine(int(w / 2), int(h), int(sx), int(sy))
 
-            # Labels
             label_parts = []
             if self.config.show_names:
                 label_parts.append("YOU" if is_local else f"Enemy {idx}")
@@ -1076,94 +766,17 @@ class Overlay(QWidget):
                 label_y = int(dsy)
                 painter.drawText(label_x, label_y, text)
 
-        # Player count
         non_local = [p for p in all_players if not p["is_local"]]
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.drawText(10, 20, f"Players: {len(non_local)}")
-        # Camouflage status — always show
-        if self._camo_feedback_count > 0 and self._camo_feedback:
-            self._camo_feedback_count -= 1
-            if self._camouflage_active and self._camouflage_color:
-                painter.setPen(QPen(QColor(*self._camouflage_color)))
-            else:
-                painter.setPen(QPen(QColor(200, 200, 200)))
-            painter.drawText(10, 40, self._camo_feedback)
-        elif self._camouflage_active and self._camouflage_color:
-            painter.setPen(QPen(QColor(*self._camouflage_color)))
-            painter.drawText(10, 40, "CAMO ON (F10)")
-        elif self.config.camouflage_enabled:
-            painter.setPen(QPen(QColor(80, 80, 80)))
-            painter.drawText(10, 40, "CAMO OFF (F10)")
 
-        # F9 direct paint feedback
         if self._f9_feedback_count > 0 and self._f9_feedback:
-            self._f9_feedback_count -= 1
             painter.setPen(QPen(QColor(0, 220, 120)))
-            painter.drawText(10, 56, self._f9_feedback)
-        elif self._paint_tiles is not None:
-            painter.setPen(QPen(QColor(0, 220, 120)))
-            painter.drawText(10, 56, f"TILING {self._paint_tile_cursor}/{self._paint_tile_total}")
+            painter.drawText(10, 40, self._f9_feedback)
         else:
             painter.setPen(QPen(QColor(80, 80, 80)))
-            painter.drawText(10, 56, "F9 = DIRECT PAINT")
+            painter.drawText(10, 40, "F9 = PHOTO PAINT")
 
-        # F9 tile-progressive paint (writes tiles per frame for smooth effect)
-        if self._paint_tiles is not None and self._paint_tile_cursor < self._paint_tile_total:
-            tiles = self._paint_tiles
-            cursor = self._paint_tile_cursor
-            # Write up to 4 tiles per frame for faster completion
-            batch_end = min(cursor + 4, self._paint_tile_total)
-            for i in range(cursor, batch_end):
-                addr, data = tiles[i]
-                try:
-                    self.esp.pm.write_bytes(addr, data, len(data))
-                except Exception:
-                    pass
-            self._paint_tile_cursor = batch_end
-            progress = batch_end / self._paint_tile_total
-            bar_x, bar_y = 10, 80
-            bar_w, bar_h = 200, 12
-            painter.setPen(QPen(QColor(60, 60, 60), 1))
-            painter.setBrush(QBrush(QColor(30, 30, 30)))
-            painter.drawRect(bar_x, bar_y, bar_w, bar_h)
-            fill_w = int(bar_w * progress)
-            if fill_w > 0:
-                painter.setBrush(QBrush(QColor(0, 220, 120)))
-                painter.setPen(Qt.NoPen)
-                painter.drawRect(bar_x + 1, bar_y + 1, max(1, fill_w - 2), bar_h - 2)
-            painter.setPen(QPen(QColor(255, 255, 255)))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawText(bar_x + 5, bar_y + 10, f"F9 TILE {batch_end}/{self._paint_tile_total}")
-            if batch_end >= self._paint_tile_total:
-                self._paint_tiles = None
-                self._f9_feedback = "TILE DONE"
-                self._f9_feedback_count = 30
-
-        # Paint pipeline progress indicator (C++ mod activity)
-        if self._paint_indicator_active:
-            elapsed = time.time() - self._paint_indicator_start
-            progress = min(1.0, elapsed / self._paint_indicator_est_sec)
-            if progress >= 1.0:
-                self._paint_indicator_active = False
-            else:
-                bar_x, bar_y = 10, 60
-                bar_w, bar_h = 200, 16
-                # Background
-                painter.setPen(QPen(QColor(60, 60, 60), 1))
-                painter.setBrush(QBrush(QColor(30, 30, 30)))
-                painter.drawRect(bar_x, bar_y, bar_w, bar_h)
-                # Fill
-                fill_w = int(bar_w * progress)
-                if fill_w > 0:
-                    painter.setBrush(QBrush(QColor(0, 160, 230)))
-                    painter.setPen(Qt.NoPen)
-                    painter.drawRect(bar_x + 1, bar_y + 1, max(1, fill_w - 2), bar_h - 2)
-                # Text
-                painter.setPen(QPen(QColor(255, 255, 255)))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawText(bar_x + 5, bar_y + 13, f"PAINTING... {int(progress * 100)}%")
-
-        # Aimbot
         if self.config.aimbot_enabled:
             cx, cy = w / 2, h / 2
             if self.config.aimbot_show_fov:
@@ -1177,9 +790,8 @@ class Overlay(QWidget):
                 )
             best_target = self._find_best_target(cam, w, h)
             if best_target and self._aim_key_held():
-                self._aim_at(best_target)
+                self._aim_at(best_target[0], best_target[1])
 
-        # Radar
         if self.config.radar_enabled and local_pos:
             radar_x = w - self.config.radar_size - 20
             radar_y = 20 + self.config.radar_size // 2
@@ -1199,6 +811,18 @@ class Overlay(QWidget):
     # -----------------------------------------------------------------------
     # Aimbot
     # -----------------------------------------------------------------------
+    def _trigger_photo_paint(self):
+        self._f9_feedback = "PAINTING..."
+        self._f9_feedback_count = 600
+        ok = self.esp.camo_apply()
+        if ok:
+            self._f9_feedback = "CAMO F10 TRIGGERED"
+            self._f9_feedback_count = 200
+        else:
+            self._f9_feedback = "CAMO FAIL"
+            self._f9_feedback_count = 120
+
+
     def _aim_key_held(self):
         vk = vk_from_name(self.config.aimbot_key)
         return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
@@ -1213,6 +837,8 @@ class Overlay(QWidget):
             if root:
                 local_pos = rvec3(self.esp.pm, root + self.esp.offsets["USceneComponent::RelativeLocation"])
 
+        if not local_pawn:
+            return None
         cx, cy = screen_w / 2, screen_h / 2
         cam_loc = camera["loc"]
         best_dist = float("inf")
@@ -1223,10 +849,10 @@ class Overlay(QWidget):
             pos = pdata["pos"]
             if local_pos:
                 dself = dist(pos, local_pos)
-                if dself < 50.0:
+                if dself < 150.0:
                     continue
             dcam = dist(pos, cam_loc)
-            if dcam < 50.0:
+            if dcam < 100.0:
                 continue
             aim_pos = (
                 pos[0], pos[1],
@@ -1240,7 +866,7 @@ class Overlay(QWidget):
             d = math.sqrt(dx * dx + dy * dy)
             if d <= self.config.aimbot_fov and d < best_dist:
                 best_dist = d
-                best_target = aim_pos
+                best_target = (aim_pos, camera)
         return best_target
 
     def _vector_to_rotation(self, vec):
@@ -1249,7 +875,7 @@ class Overlay(QWidget):
         if length == 0:
             return (0.0, 0.0, 0.0)
         x, y, z = x / length, y / length, z / length
-        pitch = math.degrees(math.asin(z))
+        pitch = -math.degrees(math.asin(z))
         yaw = math.degrees(math.atan2(y, x))
         return (pitch, yaw, 0.0)
 
@@ -1280,16 +906,15 @@ class Overlay(QWidget):
         wfloat(self.esp.pm, addr + 8, rot[2])
         return True
 
-    def _aim_at(self, target_pos):
-        cam = self.esp.get_camera()
-        if not cam:
+    def _aim_at(self, target_pos, camera):
+        if not camera:
             return
         current = self._read_control_rotation()
         if current is None:
             return
-        dx = target_pos[0] - cam["loc"][0]
-        dy = target_pos[1] - cam["loc"][1]
-        dz = target_pos[2] - cam["loc"][2]
+        dx = target_pos[0] - camera["loc"][0]
+        dy = target_pos[1] - camera["loc"][1]
+        dz = target_pos[2] - camera["loc"][2]
         target_rot = self._vector_to_rotation((dx, dy, dz))
         smooth = self.config.aimbot_smooth
         new_pitch = current[0] + (target_rot[0] - current[0]) * smooth
