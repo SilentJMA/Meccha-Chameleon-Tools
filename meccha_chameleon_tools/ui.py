@@ -589,7 +589,7 @@ class Menu(QWidget):
             " border-radius: 4px; font-weight: bold; font-size: 12px; }"
             " QPushButton:hover { background-color: #3a6a4a; }"
         )
-        btn_paint_now.clicked.connect(self._trigger_photo_paint)
+        btn_paint_now.clicked.connect(self._paint_camo_now)
         lo.addWidget(btn_paint_now)
         # Credit
         cr = QFrame()
@@ -641,6 +641,11 @@ class Menu(QWidget):
         else:
             self.btn_save.setText('Save Failed!')
             QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
+
+    def _paint_camo_now(self):
+        ok = self.esp.camo_apply()
+        self.lbl_camo_status.setText("Painted!" if ok else "Paint failed")
+        QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F9 to paint"))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -726,7 +731,7 @@ class Overlay(QWidget):
         # F9: Camouflage paint
         VK_F9 = 0x78
         f9_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
-        if f9_down and not self._key_states.get("f9") and self.config.camouflage_enabled:
+        if f9_down and not self._key_states.get("f9"):
             self._trigger_photo_paint()
         self._key_states["f9"] = f9_down
         # Decrement F9 feedback counter every poll tick

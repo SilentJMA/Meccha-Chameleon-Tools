@@ -6,8 +6,12 @@ offset resolution, and game state reading.
 """
 import struct
 import math
+import os
+import sys
+import json
 import pymem
 import ctypes
+import subprocess as _subprocess
 
 # ---------------------------------------------------------------------------
 # Bootstrap offsets: stable UObject/UStruct/FField layout
@@ -647,12 +651,171 @@ class MecchaESP:
         return None
 
     # ------
-    def camo_apply(self, r=None, g=None, b=None, a=None):
+    # Camouflage via bundled EXE (extracted to stable %APPDATA% path)
+    DLL_NAME = "meccha-xenos-bridge.dll"
+    EXE_NAME = "meccha-camouflage.exe"
+    BRIDGE_HOST = "127.0.0.1"
+    BRIDGE_PORT = 47654
+    CAMO_DIR = os.path.join(os.environ.get("APPDATA", "."), "MecchaCamouflage")
+
+    @staticmethod
+    def _get_dll_path():
+        if getattr(sys, "frozen", False):
+            base = sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, MecchaESP.DLL_NAME)
+
+    @staticmethod
+    def _get_exe_path():
+        if getattr(sys, "frozen", False):
+            base = sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, MecchaESP.EXE_NAME)
+
+    @staticmethod
+    def _get_stable_exe_path():
+        return os.path.join(MecchaESP.CAMO_DIR, MecchaESP.EXE_NAME)
+
+    @staticmethod
+    def _get_stable_dll_path():
+        return os.path.join(MecchaESP.CAMO_DIR, MecchaESP.DLL_NAME)
+
+    @staticmethod
+    def _bridge_request(command, payload=None, timeout=30):
+        import socket as _socket
+        import time as _time
+        msg = json.dumps({
+            "type": command,
+            "request_id": f"{os.urandom(8).hex()}{int(_time.time())}",
+            "timestamp_utc": int(_time.time()),
+            "payload": payload or {},
+        }) + "\n"
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        s.settimeout(timeout)
         try:
-            VK_F10 = 0x79
-            u = __import__('ctypes').windll.user32
-            u.keybd_event(VK_F10, 0, 0, 0)
-            u.keybd_event(VK_F10, 0, 2, 0)
+            s.connect((MecchaESP.BRIDGE_HOST, MecchaESP.BRIDGE_PORT))
+            s.sendall(msg.encode())
+            raw = b""
+            while b"\n" not in raw:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                raw += chunk
+            line = raw.split(b"\n")[0]
+            return json.loads(line) if line else {"success": False}
+        except Exception:
+            return {"success": False}
+        finally:
+            s.close()
+
+    def cleanup(self):
+        proc = getattr(self, "_bridge_proc", None)
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            self._bridge_proc = None
+
+    def _ensure_bridge(self):
+        pid = self.pm.process_id
+        if not pid:
+            return False
+        ping = MecchaESP._bridge_request("ping")
+        if ping.get("success"):
             return True
-        except:
+        # Ensure stable directory exists and EXE+DLL are extracted
+        try:
+            os.makedirs(MecchaESP.CAMO_DIR, exist_ok=True)
+            src_exe = self._get_exe_path()
+            dst_exe = self._get_stable_exe_path()
+            src_dll = self._get_dll_path()
+            dst_dll = self._get_stable_dll_path()
+            import shutil
+            if os.path.isfile(src_exe):
+                shutil.copy2(src_exe, dst_exe)
+            if os.path.isfile(src_dll):
+                shutil.copy2(src_dll, dst_dll)
+        except Exception as e:
+            print(f"[CAMO] extract failed: {e}")
+        exe_path = self._get_stable_exe_path()
+        if not os.path.isfile(exe_path):
+            print(f"[CAMO] EXE not found at {exe_path}")
+            return False
+        print(f"[CAMO] launching EXE: {exe_path}")
+        try:
+            self._bridge_proc = _subprocess.Popen(
+                [exe_path],
+                cwd=os.path.dirname(exe_path),
+            )
+        except Exception as e:
+            print(f"[CAMO] failed to launch EXE: {e}")
+            return False
+        # Wait for EXE to inject and settle, then trigger F10 to start bridge
+        import time as _t
+        _t.sleep(3.0)
+        # Simulate F10 keypress globally to trigger the EXE's hotkey handler
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            VK_F10 = 0x79
+            # key down
+            user32.keybd_event(VK_F10, 0, 0, 0)
+            _t.sleep(0.05)
+            # key up
+            user32.keybd_event(VK_F10, 0, 2, 0)
+            print("[CAMO] sent F10 to trigger bridge")
+        except Exception as e:
+            print(f"[CAMO] F10 send failed (will wait for manual): {e}")
+        for i in range(120):
+            _t.sleep(0.25)
+            if self._bridge_proc.poll() is not None:
+                print(f"[CAMO] EXE exited early with code {self._bridge_proc.poll()}")
+                return False
+            ping = MecchaESP._bridge_request("ping")
+            if ping.get("success"):
+                print(f"[CAMO] bridge ready after {(i+1)*0.25 + 3:.1f}s")
+                return True
+            if i % 12 == 11:
+                print(f"[CAMO] waiting for bridge... ({(i+1)//12}/10)")
+        print("[CAMO] bridge never came alive")
+        return False
+
+    def camo_apply(self, r=None, g=None, b=None, a=None):
+        if not hasattr(self, "pm") or not self.pm:
+            print("[CAMO] no pymem handle")
+            return False
+        try:
+            pid = self.pm.process_id
+            print(f"[CAMO] pid={pid}")
+            if not pid:
+                return False
+            ok = self._ensure_bridge()
+            if not ok:
+                return False
+            print("[CAMO] sending paint_full_route (fast)...")
+            resp = self._bridge_request(
+                "paint_full_route",
+                {"native_apply_mode": "template_brush_paint",
+                 "route": "f10_template_brush_paint",
+                 "process": {"pid": pid, "name": "PenguinHotel-Win64-Shipping.exe"},
+                 "max_paints_per_tick": 256,
+                 "paint_tick_budget_ms": 16,
+                 "brush_radius": 4.0,
+                 "template_min_direct_points": 5000,
+                 "auto_flush_during_paint": True},
+                timeout=120,
+            )
+            print(f"[CAMO] paint response={resp}")
+            return resp.get("success", False)
+        except Exception as e:
+            import traceback
+            print(f"[CAMO] exception: {e}")
+            traceback.print_exc()
             return False

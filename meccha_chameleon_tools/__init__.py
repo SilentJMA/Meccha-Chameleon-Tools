@@ -8,7 +8,6 @@ import os
 import zipfile
 import shutil
 import ctypes
-import subprocess
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QTimer
@@ -63,39 +62,7 @@ def _deploy_mitigation(game_dir=None):
         print(f"[MECCA] ⚠ Mitigation deploy failed: {e}")
 
 
-# Compiled camouflage EXE
-_CAMO_EXE = r"C:/Users/Ayoub/Desktop/rrrr/camouflage/meccha-camouflage.exe"
-_camo_process = None
 
-def _start_camo_exe():
-    global _camo_process
-    if _camo_process is not None:
-        return
-    if not os.path.isfile(_CAMO_EXE):
-        return
-    try:
-        _camo_process = subprocess.Popen(
-            [_CAMO_EXE, "--mode", "service",
-             "--native-apply-mode", "template_brush_paint"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    except Exception:
-        _camo_process = None
-
-def _stop_camo_exe():
-    global _camo_process
-    if _camo_process is not None:
-        try:
-            _camo_process.terminate()
-            _camo_process.wait(3)
-        except Exception:
-            try:
-                _camo_process.kill()
-            except Exception:
-                pass
-        _camo_process = None
 
 def _set_dpi_aware():
     try:
@@ -115,7 +82,6 @@ def main():
 
     game_dir = config.game_directory
     _deploy_mitigation(game_dir)
-    _start_camo_exe()
 
     try:
         esp = MecchaESP()
@@ -126,15 +92,14 @@ def main():
             f"Make sure the game is running before launching this tool.\n\n"
             f"Error: {e}"
         )
-        _stop_camo_exe()
         sys.exit(1)
     menu = Menu(config, esp)
     overlay = Overlay(esp, config)
     overlay.show()
     menu.show()
 
-    # Auto-save config on exit
-    app.aboutToQuit.connect(lambda: (save_config(config), _stop_camo_exe()))
+    # Auto-save config + cleanup on exit
+    app.aboutToQuit.connect(lambda: (save_config(config), esp.cleanup()))
 
     sys.exit(app.exec_())
 
