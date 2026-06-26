@@ -4,6 +4,7 @@ import math
 import ctypes
 import sys
 import time
+import threading
 from typing import Tuple, Optional
 
 from PyQt5.QtWidgets import (
@@ -11,7 +12,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QColorDialog,
     QSpinBox, QDoubleSpinBox, QSlider, QListWidget, QStackedWidget,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF
 from PyQt5.QtCore import QPointF
 
@@ -582,7 +583,17 @@ class Menu(QWidget):
             QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
 
     def _paint_camo_now(self):
+        if hasattr(self, '_camo_thread') and self._camo_thread and self._camo_thread.is_alive():
+            return
+        self.lbl_camo_status.setText("Painting...")
+        self._camo_thread = threading.Thread(target=self._camo_menu_worker, daemon=True)
+        self._camo_thread.start()
+
+    def _camo_menu_worker(self):
         ok = self.esp.camo_apply()
+        QTimer.singleShot(0, lambda: self._camo_menu_done(ok))
+
+    def _camo_menu_done(self, ok):
         self.lbl_camo_status.setText("Painted!" if ok else "Paint failed")
         QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F10 to paint"))
 
@@ -604,6 +615,8 @@ class Menu(QWidget):
 # Overlay widget
 # ---------------------------------------------------------------------------
 class Overlay(QWidget):
+    camo_done = pyqtSignal(bool)
+
     def __init__(self, esp: MecchaESP, config: Config):
         super().__init__()
         self.esp = esp
@@ -620,6 +633,8 @@ class Overlay(QWidget):
         self._key_states = {}
         self._f9_feedback = ""
         self._f9_feedback_count = 0
+        self._camo_thread = None
+        self.camo_done.connect(self._on_camo_done)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
         self.timer.start(16)
@@ -828,9 +843,18 @@ class Overlay(QWidget):
     # Aimbot
     # -----------------------------------------------------------------------
     def _trigger_photo_paint(self):
+        if self._camo_thread and self._camo_thread.is_alive():
+            return
         self._f9_feedback = "PAINTING..."
         self._f9_feedback_count = 600
+        self._camo_thread = threading.Thread(target=self._camo_worker, daemon=True)
+        self._camo_thread.start()
+
+    def _camo_worker(self):
         ok = self.esp.camo_apply()
+        self.camo_done.emit(ok)
+
+    def _on_camo_done(self, ok):
         if ok:
             self._f9_feedback = "CAMO F10 TRIGGERED"
             self._f9_feedback_count = 200
