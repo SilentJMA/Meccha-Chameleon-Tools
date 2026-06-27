@@ -654,6 +654,7 @@ class MecchaESP:
     # Camouflage via bundled EXE (extracted to stable %APPDATA% path)
     DLL_NAME = "meccha-xenos-bridge.dll"
     EXE_NAME = "meccha-camouflage.exe"
+    INJECTOR_NAME = "meccha-xenos-injector.exe"
     BRIDGE_HOST = "127.0.0.1"
     BRIDGE_PORT = 47654
     CAMO_DIR = os.path.join(os.environ.get("APPDATA", "."), "MecchaCamouflage")
@@ -679,8 +680,20 @@ class MecchaESP:
         return os.path.join(MecchaESP.CAMO_DIR, MecchaESP.EXE_NAME)
 
     @staticmethod
+    def _get_injector_path():
+        if getattr(sys, "frozen", False):
+            base = sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, MecchaESP.INJECTOR_NAME)
+
+    @staticmethod
     def _get_stable_dll_path():
         return os.path.join(MecchaESP.CAMO_DIR, MecchaESP.DLL_NAME)
+
+    @staticmethod
+    def _get_stable_injector_path():
+        return os.path.join(MecchaESP.CAMO_DIR, MecchaESP.INJECTOR_NAME)
 
     @staticmethod
     def _bridge_request(command, payload=None, timeout=30):
@@ -730,18 +743,22 @@ class MecchaESP:
         ping = MecchaESP._bridge_request("ping")
         if ping.get("success"):
             return True
-        # Ensure stable directory exists and EXE+DLL are extracted
+        # Ensure stable directory exists and all 3 files are extracted
         try:
             os.makedirs(MecchaESP.CAMO_DIR, exist_ok=True)
             src_exe = self._get_exe_path()
             dst_exe = self._get_stable_exe_path()
             src_dll = self._get_dll_path()
             dst_dll = self._get_stable_dll_path()
+            src_inj = self._get_injector_path()
+            dst_inj = self._get_stable_injector_path()
             import shutil
             if os.path.isfile(src_exe):
                 shutil.copy2(src_exe, dst_exe)
             if os.path.isfile(src_dll):
                 shutil.copy2(src_dll, dst_dll)
+            if os.path.isfile(src_inj):
+                shutil.copy2(src_inj, dst_inj)
         except Exception as e:
             print(f"[CAMO] extract failed: {e}")
         exe_path = self._get_stable_exe_path()
