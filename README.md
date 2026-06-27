@@ -82,6 +82,27 @@ meccha_chameleon_tools/   # Python package
 |-- ui.py                 # Qt5 overlay + menu GUI
 ```
 
+---
+
+## Camouflage Standalone Files
+
+The camouflage feature is built from three standalone files. These are bundled into the main `MecchaCamouflage.exe` release (auto-extracted to `%APPDATA%\MecchaCamouflage\`), but are also published individually for manual use or integration with other loaders.
+
+| File | Description |
+|------|-------------|
+| `meccha-camouflage.exe` | Camouflage paint bridge — connects to the running game and executes the native template brush paint route. |
+| `meccha-xenos-bridge.dll` | Xenos bridge DLL — injected into the game process to broker native calls between the bridge EXE and the engine. |
+| `meccha-xenos-injector.exe` | Xenos loader — launches and injects `meccha-xenos-bridge.dll` into the target process. |
+
+### Manual Usage
+
+1. Launch MECCA CHAMELEON.
+2. Run `meccha-xenos-injector.exe` (injects `meccha-xenos-bridge.dll`).
+3. Run `meccha-camouflage.exe` (starts the bridge).
+4. Press **F10** in-game to start painting / **F9** to cancel.
+
+All three files are attached to every `v1.7.x` release as standalone assets under the **Camouflage Files** section.
+
 ## Architecture
 
 ```
