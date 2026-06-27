@@ -561,6 +561,15 @@ class Menu(QWidget):
         )
         btn_paint_now.clicked.connect(self._paint_camo_now)
         lo.addWidget(btn_paint_now)
+        btn_stop_camo = QPushButton("Stop Camo (F9)")
+        btn_stop_camo.setFixedHeight(32)
+        btn_stop_camo.setStyleSheet(
+            "QPushButton { background-color: #4a2a2a; border: 1px solid #6a3a3a;"
+            " border-radius: 4px; font-weight: bold; font-size: 12px; }"
+            " QPushButton:hover { background-color: #6a3a3a; }"
+        )
+        btn_stop_camo.clicked.connect(self._stop_camo_now)
+        lo.addWidget(btn_stop_camo)
         lo.addStretch()
 
     def _chk(self, text, attr):
@@ -595,6 +604,21 @@ class Menu(QWidget):
 
     def _camo_menu_done(self, ok):
         self.lbl_camo_status.setText("Painted!" if ok else "Paint failed")
+        QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F10 to paint"))
+
+    def _stop_camo_now(self):
+        if hasattr(self, '_stop_thread') and self._stop_thread and self._stop_thread.is_alive():
+            return
+        self.lbl_camo_status.setText("Stopping...")
+        self._stop_thread = threading.Thread(target=self._stop_camo_worker, daemon=True)
+        self._stop_thread.start()
+
+    def _stop_camo_worker(self):
+        ok = self.esp.camo_stop()
+        QTimer.singleShot(0, lambda: self._stop_camo_done(ok))
+
+    def _stop_camo_done(self, ok):
+        self.lbl_camo_status.setText("Stopped" if ok else "Stop failed")
         QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F10 to paint"))
 
     def mousePressEvent(self, event):
@@ -633,7 +657,13 @@ class Overlay(QWidget):
         self._key_states = {}
         self._f9_feedback = ""
         self._f9_feedback_count = 0
+        # Debounce counters for phantom GetAsyncKeyState reads
+        self._f10_down_count = 0
+        self._f10_up_count = 0
+        self._f9_down_count = 0
+        self._f9_up_count = 0
         self._camo_thread = None
+        self._camo_stop_event = threading.Event()
         self.camo_done.connect(self._on_camo_done)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
@@ -682,12 +712,39 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
-        # F10: Camouflage paint
+        # F10: Camouflage paint start (debounced against phantom GetAsyncKeyState reads)
         VK_F10 = 0x79
-        f10_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F10) & 0x8000)
-        if f10_down and not self._key_states.get("f10"):
+        f10_raw = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F10) & 0x8000)
+        if f10_raw:
+            self._f10_down_count += 1
+            self._f10_up_count = 0
+        else:
+            self._f10_up_count += 1
+            self._f10_down_count = 0
+        # fire only when key is held for >=2 consecutive polls AND was released for >=2 polls
+        f10_armed = self._f10_up_count >= 2
+        if self._f10_down_count >= 2 and f10_armed and not self._key_states.get("f10"):
             self._trigger_photo_paint()
-        self._key_states["f10"] = f10_down
+            self._key_states["f10"] = True
+            self._f10_up_count = 0
+        if self._f10_down_count == 0:
+            self._key_states["f10"] = False
+        # F9: Camouflage paint stop (cancel) - debounced
+        VK_F9 = 0x78
+        f9_raw = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
+        if f9_raw:
+            self._f9_down_count += 1
+            self._f9_up_count = 0
+        else:
+            self._f9_up_count += 1
+            self._f9_down_count = 0
+        f9_armed = self._f9_up_count >= 2
+        if self._f9_down_count >= 2 and f9_armed and not self._key_states.get("f9_camo"):
+            self._trigger_camo_stop()
+            self._key_states["f9_camo"] = True
+            self._f9_up_count = 0
+        if self._f9_down_count == 0:
+            self._key_states["f9_camo"] = False
         # Decrement F10 feedback counter every poll tick
         if self._f9_feedback_count > 0:
             self._f9_feedback_count -= 1
@@ -859,9 +916,19 @@ class Overlay(QWidget):
             self._f9_feedback = "CAMO F10 TRIGGERED"
             self._f9_feedback_count = 200
         else:
-            self._f9_feedback = "CAMO FAIL"
+            if self._camo_stop_event.is_set():
+                self._f9_feedback = "CAMO STOPPED (F9)"
+            else:
+                self._f9_feedback = "CAMO FAIL"
             self._f9_feedback_count = 120
+        self._camo_thread = None
+        self._camo_stop_event.clear()
 
+    def _trigger_camo_stop(self):
+        if not self._camo_thread or not self._camo_thread.is_alive():
+            return
+        self._camo_stop_event.set()
+        self.esp.camo_stop()
 
     def _aim_key_held(self):
         vk = vk_from_name(self.config.aimbot_key)

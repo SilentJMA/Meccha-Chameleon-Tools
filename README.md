@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/08420e1f-2f3c-41e6-b520-1348202c070d
 | **Health Bars** | Health bar and shield bar, adjustable model height and Y offset |
 | **Radar** | External minimap radar with configurable size and range |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key |
-| **Camouflage** | Bundled paint EXE, auto F10 trigger, fast paint tuning |
+| **Camouflage** | Bundled paint EXE, F10 start / F9 stop, debounce-protected triggers, fast paint tuning |
 
 All ESP features are fully external (memory read). Camouflage uses a bundled bridge EXE that is auto-launched and auto-triggered.
 
@@ -51,7 +51,8 @@ Requirements: Windows 10/11, game running in windowed/borderless mode.
 | Key | Action |
 |-----|--------|
 | Insert / F1 | Toggle settings menu |
-| F10 | Camouflage paint (when enabled in Camouflage tab) |
+| F10 | Camouflage paint **start** (when enabled in Camouflage tab) |
+| F9 | Camouflage paint **stop / cancel** (cancels active paint via bridge) |
 | Close button | Bottom bar of menu -- quits the application entirely |
 
 ### Settings Tabs
@@ -66,7 +67,7 @@ The menu organises options across five tabs selected from a sidebar:
 
 **AIMBOT** - Enable toggle, FOV circle display (only shown when targets exist), key binding recorder, FOV radius, smoothing factor, aim offset.
 
-**Camouflage** - Enable/disable camouflage painting. Press F10 in-game to apply. The tool auto-launches the bundled bridge EXE and triggers F10 for you.
+**Camouflage** - Enable/disable camouflage painting. Press **F10** in-game to start painting, **F9** to cancel an active paint. The tool auto-launches the bundled bridge EXE and triggers F10 for you.
 
 ---
 
@@ -121,6 +122,12 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 ---
 
 ## Changelog
+
+### v1.7.4 - F9 stop hotkey + F10 debounce fix
+
+- **F9 stop** — new hotkey cancels an active camouflage paint via the bridge `cancel_paint` command. Overlay shows "CAMO STOPPED (F9)" feedback.
+- **F10 debounce fix** — F10 and F9 now require the key to be held for ≥2 consecutive polls (100 ms) AND released for ≥2 polls before re-arming. Eliminates phantom `GetAsyncKeyState` reads that caused F10 to auto-trigger repeatedly.
+- Stop wiring reuses the existing `camo_stop()` bridge command in core.py.
 
 ### v1.7.0 - Reworked camouflage + UI cleanup
 
