@@ -4,7 +4,7 @@
 
 # Meccha Chameleon Tools
 
-External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5)
+External ESP - Aimbot - Radar for MECCA CHAMELEON (UE5) | [Discord](https://discord.gg/ckgtuZPxd) 
 
 <img width="1213" height="793" alt="Image" src="https://github.com/user-attachments/assets/512aafbb-8199-42e5-9313-f28249306a02" />
 
