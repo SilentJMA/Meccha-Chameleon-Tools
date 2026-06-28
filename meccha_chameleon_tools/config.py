@@ -14,12 +14,15 @@ class Config:
     enabled: bool = True
     dot_esp: bool = True
     box_esp: bool = False
+    corner_box: bool = False
     skeleton_esp: bool = False
     show_local: bool = True
     show_names: bool = True
+    show_roles: bool = True
     show_distance: bool = True
     snap_lines: bool = True
     team_filter: bool = False
+    enemy_only: bool = False
 
     # Colors
     enemy_color: Tuple[int, int, int] = (255, 0, 0)
@@ -27,6 +30,8 @@ class Config:
     skeleton_color: Tuple[int, int, int] = (0, 255, 255)
     box_color: Tuple[int, int, int] = (255, 255, 255)
     radar_color: Tuple[int, int, int] = (255, 255, 255)
+    visible_color: Tuple[int, int, int] = (0, 255, 0)
+    not_visible_color: Tuple[int, int, int] = (128, 0, 128)
 
     # Sizing
     dot_radius: int = 8
@@ -79,14 +84,14 @@ class Config:
 def config_to_dict(config: Config) -> dict:
     d = asdict(config)
     # Convert tuples to lists for JSON
-    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color"):
+    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color", "visible_color", "not_visible_color"):
         d[key] = list(d[key])
     return d
 
 
 def config_from_dict(d: dict) -> Config:
     # Convert lists back to tuples
-    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color"):
+    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color", "visible_color", "not_visible_color"):
         if key in d and isinstance(d[key], list):
             d[key] = tuple(d[key])
     # Flatten bone_indices if stored as list of pairs

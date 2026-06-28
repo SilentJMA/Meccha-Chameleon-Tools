@@ -20,7 +20,7 @@ from meccha_chameleon_tools.core import (
     MecchaESP, rp, ru32, rfloat, wfloat, rvec3, rvec3_f, dist,
     read_array, OFFSETS,
 )
-from meccha_chameleon_tools.config import Config, save_config
+from meccha_chameleon_tools.config import Config, save_config, load_config
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +201,55 @@ def draw_2d_box(painter, pos, camera, screen_w, screen_h,
     painter.drawRect(int(min_x), int(min_y), int(max_x - min_x), int(max_y - min_y))
 
 
+def draw_corner_box(painter, pos, camera, screen_w, screen_h,
+                    height_world, half_width_world, rot, color, scale=1.0, length_ratio=0.25):
+    """Draw a corner-only 2D bounding box (like chameleonEsp DrawBox)."""
+    h = height_world * scale
+    hw = half_width_world * scale
+    corners_local = [
+        (-hw, 0, -hw), (-hw, 0, hw), (hw, 0, hw), (hw, 0, -hw),
+        (-hw, h, -hw), (-hw, h, hw), (hw, h, hw), (hw, h, -hw),
+    ]
+    pitch, yaw, _ = rot if rot else (0, 0, 0)
+    yaw_rad = math.radians(yaw)
+    cy, sy = math.cos(yaw_rad), math.sin(yaw_rad)
+    screen_points = []
+    for lx, ly, lz in corners_local:
+        rx = lx * cy - lz * sy
+        rz = lx * sy + lz * cy
+        wx = pos[0] + rx
+        wy = pos[1] + ly
+        wz = pos[2] + rz
+        s = w2s((wx, wy, wz), camera, screen_w, screen_h)
+        if s:
+            screen_points.append(s)
+    if len(screen_points) < 4:
+        return
+    xs = [p[0] for p in screen_points]
+    ys = [p[1] for p in screen_points]
+    min_x, max_x = int(min(xs)), int(max(xs))
+    min_y, max_y = int(min(ys)), int(max(ys))
+    bw = max_x - min_x
+    bh = max_y - min_y
+    if bw < 2 or bh < 2:
+        return
+    corner = max(4, int(min(bw, bh) * length_ratio))
+    pen = QPen(QColor(*color), 2)
+    painter.setPen(pen)
+    # top-left corner
+    painter.drawLine(min_x, min_y, min_x + corner, min_y)
+    painter.drawLine(min_x, min_y, min_x, min_y + corner)
+    # top-right corner
+    painter.drawLine(max_x - corner, min_y, max_x, min_y)
+    painter.drawLine(max_x, min_y, max_x, min_y + corner)
+    # bottom-left corner
+    painter.drawLine(min_x, max_y - corner, min_x, max_y)
+    painter.drawLine(min_x, max_y, min_x + corner, max_y)
+    # bottom-right corner
+    painter.drawLine(max_x - corner, max_y, max_x, max_y)
+    painter.drawLine(max_x, max_y - corner, max_x, max_y)
+
+
 def draw_skeleton(painter, bone_positions, camera, screen_w, screen_h, color):
     """Draw skeleton lines connecting bones."""
     bone_screen = {}
@@ -295,10 +344,11 @@ class Menu(QWidget):
         QSpinBox:focus, QDoubleSpinBox:focus { border-color: #5a8ec5; }
     """
 
-    def __init__(self, config: Config, esp: MecchaESP):
+    def __init__(self, config: Config, esp: MecchaESP, tabs=None):
         super().__init__()
         self.config = config
         self.esp = esp
+        self._active_tabs = tabs or ["ESP", "HEALTH", "RADAR", "AIMBOT", "Camouflage"]
         self.setWindowTitle("Meccha Chameleon Tools")
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -353,14 +403,14 @@ class Menu(QWidget):
                 background: #22223a; color: #aaa;
             }
         """)
-        self.tab_list.addItems(["ESP","HEALTH","RADAR","AIMBOT","Camouflage"])
+        self.tab_list.addItems(self._active_tabs)
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
         self.stack.setStyleSheet("background: transparent;")
 
         self._pages = {}
-        for tab_name in ["ESP","HEALTH","RADAR","AIMBOT","Camouflage"]:
+        for tab_name in self._active_tabs:
             page = QWidget()
             page.setStyleSheet("background: transparent;")
             self._pages[tab_name] = page
@@ -379,9 +429,16 @@ class Menu(QWidget):
         self.btn_close.clicked.connect(self._close_app)
         self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; } QPushButton:hover { background-color: #5a2a2a; }")
 
-        hint = QLabel("Ins/F1 toggle | Drag to move")
+        self.btn_load = QPushButton("Load Config")
+        self.btn_load.clicked.connect(self._load_config)
+        self.btn_close = QPushButton("Close")
+        self.btn_close.clicked.connect(self._close_app)
+        self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; } QPushButton:hover { background-color: #5a2a2a; }")
+
+        hint = QLabel("Ins/F1 toggle | Drag to move | END=Exit")
         hint.setStyleSheet("color: #555; font-size: 9px;")
         bar.addWidget(self.btn_save)
+        bar.addWidget(self.btn_load)
         bar.addWidget(self.btn_close)
         bar.addStretch()
         bar.addWidget(hint)
@@ -392,16 +449,20 @@ class Menu(QWidget):
         outer2.setContentsMargins(0, 0, 0, 0)
         self.setLayout(outer2)
 
-        # Build each tab page
-        self._build_esp_tab()
-        self._build_health_tab()
-        self._build_radar_tab()
-        self._build_aimbot_tab()
-        self._build_camo_tab()
+        # Build each active tab page
+        if "ESP" in self._active_tabs:
+            self._build_esp_tab()
+        if "HEALTH" in self._active_tabs:
+            self._build_health_tab()
+        if "RADAR" in self._active_tabs:
+            self._build_radar_tab()
+        if "AIMBOT" in self._active_tabs:
+            self._build_aimbot_tab()
+        if "Camouflage" in self._active_tabs:
+            self._build_camo_tab()
 
     def _switch_tab(self, idx):
-        names = ["ESP","HEALTH","RADAR","AIMBOT","Camouflage"]
-        if 0 <= idx < len(names):
+        if 0 <= idx < len(self._active_tabs):
             self.stack.setCurrentIndex(idx)
 
     def _build_esp_tab(self):
@@ -422,9 +483,12 @@ class Menu(QWidget):
         lo.addLayout(row)
         for cfg, label in [("show_local","Show Local Player"), ("show_names","Show Names"),
                            ("show_distance","Show Distance"), ("snap_lines","Snap Lines"),
+                           ("enemy_only","Enemy Only"), ("show_roles","Show Roles"),
                            ("team_filter","Team Filter"), ("distance_scaling","Dist. Scaling")]:
             cb = self._chk(label, cfg)
             lo.addWidget(cb)
+        self.cb_corner = self._chk("Corner Box","corner_box")
+        lo.addWidget(self.cb_corner)
         dr = QHBoxLayout()
         dr.addWidget(QLabel("Dot Radius:"))
         self.spn_dot = QSpinBox()
@@ -591,6 +655,15 @@ class Menu(QWidget):
             self.btn_save.setText('Save Failed!')
             QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
 
+    def _load_config(self):
+        loaded = load_config()
+        from dataclasses import fields as dc_fields
+        for field in dc_fields(self.config):
+            if hasattr(loaded, field.name):
+                setattr(self.config, field.name, getattr(loaded, field.name))
+        self.btn_load.setText('Config Loaded!')
+        QTimer.singleShot(1500, lambda: self.btn_load.setText('Load Config'))
+
     def _paint_camo_now(self):
         if hasattr(self, '_camo_thread') and self._camo_thread and self._camo_thread.is_alive():
             return
@@ -736,6 +809,12 @@ class Overlay(QWidget):
             self._trigger_camo_stop()
             self._f9_last_fire_ms = now_ms
             self._f9_down_count = 0
+        # END key: exit application
+        VK_END = 0x23
+        end_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_END) & 0x8000)
+        if end_down and not self._key_states.get("end"):
+            QApplication.quit()
+        self._key_states["end"] = end_down
         # Decrement F10 feedback counter every poll tick
         if self._f9_feedback_count > 0:
             self._f9_feedback_count -= 1
@@ -763,13 +842,16 @@ class Overlay(QWidget):
         all_players = list(self.esp.iter_players(
             include_local=self.config.show_local,
             team_filter=self.config.team_filter,
+            enemy_only=self.config.enemy_only,
         ))
 
         local_pos = None
+        local_is_hunter = None
         if all_players:
             for p in all_players:
                 if p["is_local"]:
                     local_pos = p["pos"]
+                    local_is_hunter = p["is_hunter"]
                     break
 
         for pdata in all_players:
@@ -778,6 +860,8 @@ class Overlay(QWidget):
             actor = pdata["actor"]
             ps = pdata["player_state"]
             idx = pdata["idx"]
+            role = pdata.get("role", "Unknown")
+            is_enemy = pdata.get("is_enemy", False)
 
             d = dist(pos, cam["loc"])
             scale = 1.0
@@ -791,10 +875,18 @@ class Overlay(QWidget):
 
             sx, sy = screen_center
             sy += self.config.box_y_offset
+
+            # Pick color: visible/not-visible or team-based
             if is_local:
                 color = self.config.local_color
             else:
-                color = self.config.enemy_color
+                visible = self.esp._is_visible(actor)
+                if visible and self.config.enemy_only:
+                    color = self.config.visible_color
+                elif not visible and self.config.enemy_only:
+                    color = self.config.not_visible_color
+                else:
+                    color = self.config.enemy_color
 
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
@@ -803,11 +895,14 @@ class Overlay(QWidget):
                 radius = int(self.config.dot_radius * scale)
                 self._draw_dot(painter, dsx, dsy, max(2, radius), color)
 
-            if self.config.box_esp:
-                rot = self.esp.get_actor_root_rotation(actor) if actor else None
-                hw = self.config.box_height_world / 3.0
+            rot = self.esp.get_actor_root_rotation(actor) if actor else None
+            hw = self.config.box_height_world / 3.0
+            if self.config.box_esp and not self.config.corner_box:
                 draw_2d_box(painter, pos, cam, w, h,
                             self.config.box_height_world, hw, rot, color, scale)
+            if self.config.corner_box:
+                draw_corner_box(painter, pos, cam, w, h,
+                                self.config.box_height_world, hw, rot, color, scale)
 
             if self.config.skeleton_esp and actor and not is_local:
                 bones = self.esp.get_skeleton_positions(actor)
@@ -834,6 +929,8 @@ class Overlay(QWidget):
             label_parts = []
             if self.config.show_names:
                 label_parts.append("YOU" if is_local else f"Enemy {idx}")
+            if self.config.show_roles and role != "Unknown":
+                label_parts.append(role)
             if self.config.show_distance:
                 dm = int(d / 100)
                 label_parts.append(f"{dm}m")

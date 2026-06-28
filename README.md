@@ -17,11 +17,11 @@ https://github.com/user-attachments/assets/08420e1f-2f3c-41e6-b520-1348202c070d
 
 | Category | Capabilities |
 |----------|-------------|
-| **ESP** | Dot / 2D Box / Skeleton overlay, names, distance, snap lines, team filter, distance scaling |
+| **ESP** | Dot / 2D Box / **Corner Box** / Skeleton overlay, names, **role labels (Hunter/Survivor)**, distance, snap lines, **enemy-only filter**, **visible/not-visible coloring**, team filter, distance scaling |
 | **Health Bars** | Health bar and shield bar, adjustable model height and Y offset |
 | **Radar** | External minimap radar with configurable size and range |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key |
-| **Camouflage** | Bundled paint EXE, F10 start / F9 stop, debounce-protected triggers, fast paint tuning |
+| **Camouflage** | Bundled paint EXE, F10 start / F9 stop / **auto multi-angle (front+back)**, **180° rotate**, debounce-protected triggers, fast paint tuning |
 
 All ESP features are fully external (memory read). Camouflage uses a bundled bridge EXE that is auto-launched and auto-triggered.
 
@@ -53,6 +53,7 @@ Requirements: Windows 10/11, game running in windowed/borderless mode.
 | Insert / F1 | Toggle settings menu |
 | F10 | Camouflage paint **start** (when enabled in Camouflage tab) |
 | F9 | Camouflage paint **stop / cancel** (cancels active paint via bridge) |
+| END | Quit the application entirely |
 | Close button | Bottom bar of menu -- quits the application entirely |
 
 ### Settings Tabs
@@ -67,7 +68,7 @@ The menu organises options across five tabs selected from a sidebar:
 
 **AIMBOT** - Enable toggle, FOV circle display (only shown when targets exist), key binding recorder, FOV radius, smoothing factor, aim offset.
 
-**Camouflage** - Enable/disable camouflage painting. Press **F10** in-game to start painting, **F9** to cancel an active paint. The tool auto-launches the bundled bridge EXE and triggers F10 for you.
+**Camouflage** - Enable/disable camouflage painting. Press **F10** in-game to start painting, **F9** to cancel an active paint. The tool auto-launches the bundled bridge EXE and performs a **multi-angle paint** — front pass (0°), rotates the camera 180° via `K2_SetActorRotation`, then paints the back side. Supports teleport, FOV override, and kill commands via bridge.
 
 ---
 
@@ -77,8 +78,9 @@ The menu organises options across five tabs selected from a sidebar:
 meccha_chameleon_tools/   # Python package
 |-- __init__.py           # Main application entry point
 |-- __main__.py           # Module runner
+|-- camo_entry.py         # Standalone camouflage CLI entry point
 |-- config.py             # Configuration + JSON save/load
-|-- core.py               # Memory reading, ESP logic
+|-- core.py               # Memory reading, ESP logic, role detection, bridge commands
 |-- ui.py                 # Qt5 overlay + menu GUI
 ```
 
@@ -86,23 +88,53 @@ meccha_chameleon_tools/   # Python package
 
 ## Camouflage Standalone Files
 
-The camouflage feature is built from three standalone files. These are bundled into the main `MecchaCamouflage.exe` release (auto-extracted to `%APPDATA%\MecchaCamouflage\`), but are also published as a single **`camouflage-standalone.zip`** for manual use or integration with other loaders.
+The camouflage feature is built from two distributions. The **standalone** `MecchaCamouflage.exe` (12 MB, no PyQt5) provides a minimal one-click paint experience. The **full** `Meccha Chameleon Tools.exe` (40 MB) bundles all features including the menu overlay.
+
+### Standalone `MecchaCamouflage.exe`
+
+- Built via `MecchaCamouflage.spec` (PyInstaller, tkinter GUI only — no PyQt5)
+- Entry point: `standalone_camo.py`
+- Auto-launches the bridge, performs **multi-angle paint**: front pass (yaw=0°), rotates camera 180° via `K2_SetActorRotation`, 1.5s wait, then back pass
+- Single `camo_apply()` call handles both passes with `paint_full_route` command (no F10 simulation)
+
+### Bridge Components
 
 | File | Description |
 |------|-------------|
-| `meccha-camouflage.exe` | Camouflage paint bridge — connects to the running game and executes the native template brush paint route. |
-| `meccha-xenos-bridge.dll` | Xenos bridge DLL — injected into the game process to broker native calls between the bridge EXE and the engine. |
-| `meccha-xenos-injector.exe` | Xenos loader — launches and injects `meccha-xenos-bridge.dll` into the target process. |
+| `meccha-camouflage.exe` | Camouflage paint bridge — TCP command server for paint, rotate, teleport, kill, set_fov. |
+| `meccha-xenos-bridge.dll` | Xenos bridge DLL — injected into the game process to broker native calls. |
+| `meccha-xenos-injector.exe` | Xenos loader — launches and injects `meccha-xenos-bridge.dll`. |
 
-### Manual Usage
+### New Bridge Commands
 
-1. Download and extract `camouflage-standalone.zip`.
+| Command | Description |
+|---------|-------------|
+| `paint_full_route` | Execute native template brush paint route (256 paint/tick, brush_radius 4.0). |
+| `cancel_paint` | Mark active paint as cancelled, drain queue, unblock caller. |
+| `rotate` | Rotate local pawn 180° via `K2_GetActorRotation` / `K2_SetActorRotation`. |
+| `teleport` | Teleport local player to world coordinates. |
+| `set_fov` | Override camera FOV. |
+| `kill` | Kill self or enemies. |
+
+### Source Code
+
+The bridge C++ source lives in `runtime/`:
+
+```
+runtime/
+|-- src/bridge.cpp        # TCP command server, paint/cancel/rotate/teleport/FOV/kill handlers
+|-- include/sdk.hpp        # Unreal Engine SDK structs (K2_GetActorRotation, K2_SetActorRotation, FField offsets)
+|-- scripts/build.ps1      # MSVC build script, embeds dll as resource 101 in controller EXE
+```
+
+### Manual Usage (standalone)
+
+1. Extract `camouflage-standalone.zip` or run `MecchaCamouflage.exe`.
 2. Launch MECCA CHAMELEON.
-3. Run `meccha-xenos-injector.exe` (injects `meccha-xenos-bridge.dll`).
-4. Run `meccha-camouflage.exe` (starts the bridge).
-5. Press **F10** in-game to start painting / **F9** to cancel.
+3. The tool auto-launches bridge + injector and performs the full multi-angle paint.
+4. Press **F9** to cancel an active paint.
 
-The ZIP is attached to every `v1.7.x` release as a standalone asset.
+The ZIP is attached to every release as a standalone asset.
 
 ## Architecture
 
@@ -110,9 +142,11 @@ The ZIP is attached to every `v1.7.x` release as a standalone asset.
 PatternScanner -> GUObjectArray, FNamePool
 UObjectArray -> find_class, iter_objects
 OffsetResolver -> dynamic property walking
-GameReader -> world, camera, players
+GameReader -> world, camera, players, role detection
 Overlay -> QPainter rendering loop @ 60 fps
-Menu -> PyQt5 settings window (5-tab sidebar: ESP, HEALTH, RADAR, AIMBOT, Camouflage)
+Menu -> PyQt5 settings window (tabs: ESP, HEALTH, RADAR, AIMBOT, Camouflage)
+Bridge C++ DLL -> TCP command server for paint, rotate, teleport, kill, set_fov
+Standalone camo -> tkinter GUI (MecchaCamouflage.exe), multi-angle paint via bridge
 ```
 
 ### Memory Access
@@ -140,10 +174,24 @@ The FNameResolver auto-detects UE4, UE5, and custom header-layout variants. The 
 | Snap lines not visible | w2s dropped off-screen projections | Update â€” off-screen players now correctly draw lines to screen edge |
 | Aimbot not firing | Key binding mismatch | Re-record the aim key in the AIMBOT tab |
 | Radar not showing | Radar disabled | Enable Radar Enabled in the RADAR tab |
+| Paint only covers front | Camera rotation failed | Multi-angle paints front+back; ensure game window is visible for hook injection |
 
 ---
 
 ## Changelog
+
+### v1.8.0 - Role detection, enemy filter, corner box, teleport/kill/FOV commands, standalone EXE
+
+- **Role detection** — `_detect_role()` reads actor class name to label players as **Hunter** or **Survivor**.
+- **Enemy-only filter** — new `enemy_only` config option hides same-team players from ESP.
+- **Show Roles** — toggle to display Hunter/Survivor labels above player dots.
+- **Corner Box** — optional corner-only 2D bounding boxes (`corner_box` toggle).
+- **Visible/Not-visible colors** — ESP dot/box uses `visible_color` (green) for line-of-sight targets and `not_visible_color` (purple) for occluded ones.
+- **Load Config** — new "Load Config" button in menu bottom bar reloads saved JSON config at runtime.
+- **END key to exit** — press END to quit the application (in addition to the Close button).
+- **Teleport / Set FOV / Kill** — new `teleport`, `set_fov`, and `kill` bridge commands in `core.py` with TCP dispatch.
+- **Standalone MecchaCamouflage.exe** — 12 MB tkinter-only build (no PyQt5) with full multi-angle paint (front + 180° rotate + back).
+- **Bridge rotate command** — camera rotation via `K2_GetActorRotation` / `K2_SetActorRotation` on the pawn (proper SDK calls).
 
 ### v1.7.4 - F9 stop hotkey + F10 debounce fix
 

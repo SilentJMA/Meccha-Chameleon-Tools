@@ -607,8 +607,41 @@ class MecchaESP:
         radius = rfloat(self.pm, bounds_addr + 0x30)
         return origin, extent, radius
 
+    def _detect_role(self, pawn):
+        """Return ('Hunter', True, False) or ('Survivor', False, True) or ('Unknown', False, False)."""
+        try:
+            name = self.objects.class_name(pawn)
+            if "Hunter" in name:
+                return "Hunter", True, False
+            if "Survivor" in name:
+                return "Survivor", False, True
+        except Exception:
+            pass
+        return "Unknown", False, False
+
+    def _is_visible(self, actor):
+        """Approximate visibility check: read body/sphere visibility flag if available."""
+        try:
+            try:
+                root = rp(self.pm, actor + self.offsets["AActor::RootComponent"])
+                if root:
+                    vis = ru32(self.pm, root + 0x258)
+                    if vis == 0:
+                        return False
+            except Exception:
+                pass
+            try:
+                vis = ru32(self.pm, actor + self.offsets.get("AActor::bHidden", 0x178))
+                if vis == 1:
+                    return False
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return True
+
     # ------
-    def iter_players(self, include_local=True, team_filter=False):
+    def iter_players(self, include_local=True, team_filter=False, enemy_only=False):
         world = self._get_world()
         if not world:
             return
@@ -622,6 +655,9 @@ class MecchaESP:
         local_pawn = 0
         if local_pc:
             local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
+        local_role, local_is_hunter, local_is_survivor = "Unknown", False, False
+        if local_pawn:
+            local_role, local_is_hunter, local_is_survivor = self._detect_role(local_pawn)
         seen = set()
         for i in range(pa_count):
             ps = rp(self.pm, pa_data + i * 8)
@@ -636,12 +672,24 @@ class MecchaESP:
             pos = self.get_actor_root_pos(pawn)
             if pos is None:
                 continue
+            role, is_hunter, is_survivor = self._detect_role(pawn)
+            is_enemy = False
+            if local_is_hunter and is_survivor:
+                is_enemy = True
+            elif local_is_survivor and is_hunter:
+                is_enemy = True
+            if enemy_only and not is_enemy:
+                continue
             yield {
                 "is_local": pawn == local_pawn,
                 "pos": pos,
                 "actor": pawn,
                 "player_state": ps,
                 "idx": i,
+                "role": role,
+                "is_hunter": is_hunter,
+                "is_survivor": is_survivor,
+                "is_enemy": is_enemy,
             }
 
     def get_skeleton_positions(self, actor):
@@ -849,3 +897,35 @@ class MecchaESP:
             print(f"[CAMO] exception: {e}")
             traceback.print_exc()
             return False
+
+    def camo_stop(self):
+        """Cancel active camouflage paint via bridge cancel_paint command."""
+        print("[CAMO] sending cancel_paint...")
+        resp = MecchaESP._bridge_request("cancel_paint", {}, timeout=10)
+        print(f"[CAMO] cancel response={resp}")
+        return resp.get("success", False) if resp else False
+
+    def teleport(self, x, y, z):
+        """Teleport local player to world coordinates via bridge."""
+        print(f"[CAMO] teleporting to ({x:.1f}, {y:.1f}, {z:.1f})...")
+        resp = MecchaESP._bridge_request("teleport", {"x": x, "y": y, "z": z}, timeout=30)
+        ok = resp.get("success", False)
+        print(f"[CAMO] teleport {'ok' if ok else 'failed'}: {resp}")
+        return ok
+
+    def set_fov(self, fov):
+        """Override camera FOV via bridge."""
+        print(f"[CAMO] setting FOV to {fov}...")
+        resp = MecchaESP._bridge_request("set_fov", {"fov": fov}, timeout=30)
+        ok = resp.get("success", False)
+        print(f"[CAMO] set_fov {'ok' if ok else 'failed'}: {resp}")
+        return ok
+
+    def kill(self, enemies=False):
+        """Kill local player (or enemies) via bridge."""
+        target = "enemies" if enemies else "self"
+        print(f"[CAMO] killing {target}...")
+        resp = MecchaESP._bridge_request("kill", {"enemies": enemies}, timeout=30)
+        ok = resp.get("success", False)
+        print(f"[CAMO] kill {'ok' if ok else 'failed'}: {resp}")
+        return ok
