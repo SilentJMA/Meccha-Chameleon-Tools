@@ -5,8 +5,6 @@ Fully external box ESP for MECCHA CHAMELEON (Steam / UE5.6).
 """
 import sys
 import os
-import zipfile
-import shutil
 import ctypes
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -19,12 +17,10 @@ from meccha_chameleon_tools.core import (
     PatternScanner, FNameResolver, UObjectArray, OffsetResolver,
 )
 from meccha_chameleon_tools.config import Config, load_config, save_config, CONFIG_FILE
+from meccha_chameleon_tools.translations import _tr
 from meccha_chameleon_tools.ui import Menu, Overlay
 
 
-MITIGATION_ZIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "meccha-camouflage-1.0.0.zip")
-if not os.path.exists(MITIGATION_ZIP):
-    MITIGATION_ZIP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "meccha-camouflage-1.0.0.zip")
 # Default game directory - user can override via config
 _DEFAULT_GAME_DIR = r"C:\Program Files (x86)\Steam\steamapps\common\MECCA CHAMELEON\Chameleon\Binaries\Win64"
 
@@ -33,35 +29,6 @@ def get_game_dir(config=None):
     if config and hasattr(config, "game_directory") and config.game_directory:
         return config.game_directory
     return _DEFAULT_GAME_DIR
-
-
-def _deploy_mitigation(game_dir=None):
-    """Copy tool files to game directory as a mitigation measure.
-    This runs once at startup to place tool files alongside the game binary."""
-    if not game_dir or not os.path.exists(game_dir):
-        return
-    marker = os.path.join(game_dir, "meccha_chameleon_tools")
-    if os.path.exists(marker):
-        return
-    # Try ZIP at project root first, then the local one
-    zip_path = MITIGATION_ZIP
-    if not os.path.exists(zip_path):
-        # Try the zip filename from the game dir name
-        base_name = os.path.basename(os.path.dirname(os.path.dirname(game_dir)))
-        alt_zip = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(game_dir))), base_name + ".zip")
-        if os.path.exists(alt_zip):
-            zip_path = alt_zip
-    if not os.path.exists(zip_path):
-        print(f"[MECCA] ⚠ Mitigation zip not found at {zip_path}")
-        return
-    try:
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(game_dir)
-        print(f"[MECCA] ✓ Mitigation deployed: tool files copied to {game_dir}")
-    except Exception as e:
-        print(f"[MECCA] ⚠ Mitigation deploy failed: {e}")
-
-
 
 
 def _set_dpi_aware():
@@ -79,9 +46,7 @@ def main():
     app = QApplication(sys.argv)
 
     config = load_config()
-
-    game_dir = config.game_directory
-    _deploy_mitigation(game_dir)
+    _tr.set_language(config.language)
 
     try:
         esp = MecchaESP()

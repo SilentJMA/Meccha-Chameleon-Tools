@@ -619,6 +619,72 @@ class MecchaESP:
             pass
         return "Unknown", False, False
 
+    def get_invincible(self, actor):
+        """Check if actor has invincibility god-mode flag enabled."""
+        try:
+            inv = ru32(self.pm, actor + 0x174)
+            if inv == 1:
+                return True
+            inv = ru32(self.pm, actor + 0x1D8)
+            if inv == 1:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def get_actor_class_canonical(self, actor):
+        """Return readable class name for draw-all."""
+        try:
+            return self.objects.class_name(actor)
+        except Exception:
+            return ""
+
+    def iter_actors(self, max_actors=2000, class_filter=None):
+        """Iterate all non-player actors in the world (items, chunks, etc)."""
+        world = self._get_world()
+        if not world:
+            return
+        gs = rp(self.pm, world + self.offsets.get("UWorld::GameState", 0))
+        if not gs:
+            return
+        pa_data, pa_count, _ = read_array(self.pm, gs + self.offsets["AGameStateBase::PlayerArray"])
+        seen_pawns = set()
+        if pa_data:
+            for i in range(pa_count):
+                ps = rp(self.pm, pa_data + i * 8)
+                if ps:
+                    pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
+                    if pawn:
+                        seen_pawns.add(pawn)
+        count = 0
+        for obj in self.objects.iter_objects():
+            if count >= max_actors:
+                break
+            try:
+                cls_name = self.objects.class_name(obj)
+                if not cls_name:
+                    continue
+                if cls_name.startswith("Default__"):
+                    continue
+                if obj in seen_pawns:
+                    continue
+                if class_filter:
+                    if class_filter not in cls_name:
+                        continue
+                else:
+                    if "Collectible" not in cls_name and "Item" not in cls_name and "Chunk" not in cls_name:
+                        continue
+                root = rp(self.pm, obj + self.offsets.get("AActor::RootComponent", 0))
+                if not root:
+                    continue
+                pos = rvec3(self.pm, root + self.offsets.get("USceneComponent::RelativeLocation", 0))
+                if pos is None or (pos[0] == 0 and pos[1] == 0 and pos[2] == 0):
+                    continue
+                count += 1
+                yield {"actor": obj, "pos": pos, "class_name": cls_name}
+            except Exception:
+                continue
+
     def _is_visible(self, actor):
         """Approximate visibility check: read body/sphere visibility flag if available."""
         try:
@@ -865,46 +931,6 @@ class MecchaESP:
         print("[CAMO] bridge never came alive")
         return False
 
-    def camo_apply(self, r=None, g=None, b=None, a=None):
-        if not hasattr(self, "pm") or not self.pm:
-            print("[CAMO] no pymem handle")
-            return False
-        try:
-            pid = self.pm.process_id
-            print(f"[CAMO] pid={pid}")
-            if not pid:
-                return False
-            ok = self._ensure_bridge()
-            if not ok:
-                return False
-            print("[CAMO] sending paint_full_route (fast)...")
-            resp = self._bridge_request(
-                "paint_full_route",
-                {"native_apply_mode": "template_brush_paint",
-                 "route": "f10_template_brush_paint",
-                 "process": {"pid": pid, "name": "PenguinHotel-Win64-Shipping.exe"},
-                 "max_paints_per_tick": 256,
-                 "paint_tick_budget_ms": 16,
-                 "brush_radius": 4.0,
-                 "template_min_direct_points": 5000,
-                 "auto_flush_during_paint": True},
-                timeout=120,
-            )
-            print(f"[CAMO] paint response={resp}")
-            return resp.get("success", False)
-        except Exception as e:
-            import traceback
-            print(f"[CAMO] exception: {e}")
-            traceback.print_exc()
-            return False
-
-    def camo_stop(self):
-        """Cancel active camouflage paint via bridge cancel_paint command."""
-        print("[CAMO] sending cancel_paint...")
-        resp = MecchaESP._bridge_request("cancel_paint", {}, timeout=10)
-        print(f"[CAMO] cancel response={resp}")
-        return resp.get("success", False) if resp else False
-
     def teleport(self, x, y, z):
         """Teleport local player to world coordinates via bridge."""
         print(f"[CAMO] teleporting to ({x:.1f}, {y:.1f}, {z:.1f})...")
@@ -928,4 +954,20 @@ class MecchaESP:
         resp = MecchaESP._bridge_request("kill", {"enemies": enemies}, timeout=30)
         ok = resp.get("success", False)
         print(f"[CAMO] kill {'ok' if ok else 'failed'}: {resp}")
+        return ok
+
+    def teleport_collectible(self, key="Y"):
+        """Teleport nearest collectible/item to local player via bridge."""
+        print(f"[CAMO] teleporting collectible (key={key})...")
+        resp = MecchaESP._bridge_request("teleport_collectible", {"key": key}, timeout=30)
+        ok = resp.get("success", False)
+        print(f"[CAMO] teleport_collectible {'ok' if ok else 'failed'}: {resp}")
+        return ok
+
+    def player_mod(self, speed_mult=1.0, jump_mult=1.0):
+        """Set player speed/jump multipliers via bridge."""
+        print(f"[CAMO] player_mod speed={speed_mult}x jump={jump_mult}x...")
+        resp = MecchaESP._bridge_request("player_mod", {"speed_mult": speed_mult, "jump_mult": jump_mult}, timeout=30)
+        ok = resp.get("success", False)
+        print(f"[CAMO] player_mod {'ok' if ok else 'failed'}: {resp}")
         return ok

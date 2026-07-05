@@ -9,7 +9,7 @@ from typing import Tuple, Optional
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QCheckBox, QComboBox, QLabel,
-    QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QColorDialog,
+    QVBoxLayout, QHBoxLayout, QPushButton, QFrame,
     QSpinBox, QDoubleSpinBox, QSlider, QListWidget, QStackedWidget,
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
@@ -21,6 +21,8 @@ from meccha_chameleon_tools.core import (
     read_array, OFFSETS,
 )
 from meccha_chameleon_tools.config import Config, save_config, load_config
+from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
+from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, stop_paint, is_bridge_alive
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +35,7 @@ def rotation_to_axes(rot):
     sr, cr = math.sin(roll), math.cos(roll)
     forward = (cp * cy, cp * sy, sp)
     right = (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp)
-    up = (-(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp)
+    up = (-(cr * sp * cy + sr * sy), cy * sr - cr * sp * cy, cr * cp)
     return forward, right, up
 
 
@@ -143,7 +145,6 @@ def draw_health_bar(painter, x, y, w, h, health_pct, shield_pct, spacing=2):
     """Draw stacked health (green top) and shield (blue bottom) bars."""
     bar_w = max(4, w)
     bar_h = 4
-    # Shield bar (bottom)
     if shield_pct is not None and shield_pct > 0:
         sy = y + bar_h + spacing
         sfill = int(bar_w * min(shield_pct / 100.0, 1.0))
@@ -152,7 +153,6 @@ def draw_health_bar(painter, x, y, w, h, health_pct, shield_pct, spacing=2):
         painter.drawRect(int(x), int(sy), int(bar_w), bar_h)
         painter.setBrush(QColor(0, 120, 255, 220))
         painter.drawRect(int(x), int(sy), int(sfill), bar_h)
-    # Health bar (above)
     if health_pct is not None and health_pct >= 0:
         hy = y
         hfill = int(bar_w * min(health_pct / 100.0, 1.0))
@@ -167,7 +167,7 @@ def draw_health_bar(painter, x, y, w, h, health_pct, shield_pct, spacing=2):
 
 
 def draw_2d_box(painter, pos, camera, screen_w, screen_h,
-                height_world, half_width_world, rot, color, scale=1.0):
+                height_world, half_width_world, rot, color, scale=1.0, thickness=1):
     """Draw a 2D bounding box around a world position with given rotation."""
     h = height_world * scale
     hw = half_width_world * scale
@@ -180,7 +180,6 @@ def draw_2d_box(painter, pos, camera, screen_w, screen_h,
     cy, sy = math.cos(yaw_rad), math.sin(yaw_rad)
     screen_points = []
     for lx, ly, lz in corners_local:
-        # Rotate around Y axis (yaw)
         rx = lx * cy - lz * sy
         rz = lx * sy + lz * cy
         wx = pos[0] + rx
@@ -195,14 +194,13 @@ def draw_2d_box(painter, pos, camera, screen_w, screen_h,
     ys = [p[1] for p in screen_points]
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
-    # Draw connected lines for the 4 vertical edges
-    painter.setPen(QPen(QColor(*color), 1))
+    painter.setPen(QPen(QColor(*color), thickness))
     painter.setBrush(Qt.NoBrush)
     painter.drawRect(int(min_x), int(min_y), int(max_x - min_x), int(max_y - min_y))
 
 
 def draw_corner_box(painter, pos, camera, screen_w, screen_h,
-                    height_world, half_width_world, rot, color, scale=1.0, length_ratio=0.25):
+                    height_world, half_width_world, rot, color, scale=1.0, length_ratio=0.25, thickness=2):
     """Draw a corner-only 2D bounding box (like chameleonEsp DrawBox)."""
     h = height_world * scale
     hw = half_width_world * scale
@@ -234,18 +232,14 @@ def draw_corner_box(painter, pos, camera, screen_w, screen_h,
     if bw < 2 or bh < 2:
         return
     corner = max(4, int(min(bw, bh) * length_ratio))
-    pen = QPen(QColor(*color), 2)
+    pen = QPen(QColor(*color), thickness)
     painter.setPen(pen)
-    # top-left corner
     painter.drawLine(min_x, min_y, min_x + corner, min_y)
     painter.drawLine(min_x, min_y, min_x, min_y + corner)
-    # top-right corner
     painter.drawLine(max_x - corner, min_y, max_x, min_y)
     painter.drawLine(max_x, min_y, max_x, min_y + corner)
-    # bottom-left corner
     painter.drawLine(min_x, max_y - corner, min_x, max_y)
     painter.drawLine(min_x, max_y, min_x + corner, max_y)
-    # bottom-right corner
     painter.drawLine(max_x - corner, max_y, max_x, max_y)
     painter.drawLine(max_x, max_y - corner, max_x, max_y)
 
@@ -282,14 +276,11 @@ def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size,
     painter.setPen(QPen(QColor(255, 255, 255, opacity), 1))
     painter.setBrush(QBrush(QColor(0, 0, 0, opacity)))
     painter.drawEllipse(int(radar_cx - half), int(radar_cy - half), radar_size, radar_size)
-    # Crosshair
     painter.drawLine(int(radar_cx - half), int(radar_cy), int(radar_cx + half), int(radar_cy))
     painter.drawLine(int(radar_cx), int(radar_cy - half), int(radar_cx), int(radar_cy + half))
-    # Draw local player at center
     painter.setPen(Qt.NoPen)
     painter.setBrush(QColor(0, 255, 0, 220))
     painter.drawEllipse(int(radar_cx - 2), int(radar_cy - 2), 5, 5)
-    # Draw enemies
     cam_yaw = math.radians(cam["rot"][1])
     for p in players:
         pos = p["pos"]
@@ -298,7 +289,6 @@ def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size,
         d2d = math.sqrt(dx * dx + dz * dz)
         if d2d > radar_range or d2d < 1.0:
             continue
-        # Rotate by inverse camera yaw
         angle = math.atan2(dx, dz) - cam_yaw
         r = (d2d / radar_range) * (half - 8)
         rx = radar_cx + r * math.sin(angle)
@@ -309,78 +299,149 @@ def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size,
         painter.drawEllipse(int(rx - 2), int(ry - 2), 5, 5)
 
 
-# ---------------------------------------------------------------------------
-# Menu widget
-# ---------------------------------------------------------------------------
+ES = "\u26a0 "
+
+
+_tab_map = {"ESP": "ESP", "HEALTH": "HEALTH", "VISUAL": "VISUAL", "RADAR": "RADAR", "AIMBOT": "AIMBOT", "PLAYER": "PLAYER", "CAMOUFLAGE": "CAMOUFLAGE"}
+
+
 class Menu(QWidget):
     STYLE = """
-        QFrame {
-            background-color: rgba(14, 14, 20, 240);
+        QFrame#menuFrame {
+            background-color: rgba(14, 14, 22, 240);
             border: 1px solid #2a2a3e;
             border-radius: 10px;
         }
-        QLabel { color: #bbb; font-size: 11px; }
+        QLabel { color: #ccc; font-size: 11px; background: transparent; }
         QCheckBox { color: #ccc; font-size: 11px; spacing: 8px; padding: 1px 0; }
-        QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px; border: 1px solid #444; background: #1a1a28; }
-        QCheckBox::indicator:checked {
-            background: #3a6ea5; border-color: #5a8ec5;
-        }
+        QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px; border: 1px solid #3a3a50; background: #1a1a26; }
+        QCheckBox::indicator:checked { background: #3a6ea5; border-color: #5a8ec5; }
         QComboBox {
-            background-color: #333; color: #eee;
-            border: 1px solid #555; padding: 4px;
+            background-color: #1a1a26; color: #ccc;
+            border: 1px solid #2a2a3e; padding: 4px 8px; border-radius: 4px;
+            font-size: 11px; min-height: 22px;
+        }
+        QComboBox:hover { border-color: #4a4a6a; }
+        QComboBox::drop-down {
+            subcontrol-origin: padding; subcontrol-position: top right;
+            width: 22px; border-left: 1px solid #2a2a3e;
+            border-top-right-radius: 4px; border-bottom-right-radius: 4px;
+        }
+        QComboBox::down-arrow { width: 8px; height: 8px; }
+        QComboBox QAbstractItemView {
+            background-color: #1a1a26; color: #ccc;
+            border: 1px solid #2a2a3e; border-radius: 4px;
+            selection-background-color: #3a6ea5; selection-color: #fff;
+            outline: none; font-size: 11px; padding: 2px;
         }
         QPushButton {
             background-color: #22223a; color: #ccc;
-            border: 1px solid #33334a; padding: 5px 10px; border-radius: 5px;
+            border: 1px solid #2a2a3e; padding: 5px 10px; border-radius: 5px;
             font-size: 11px;
         }
         QPushButton:hover { background-color: #2e2e4a; border-color: #4a4a6a; }
         QPushButton:pressed { background-color: #3a3a5a; }
         QSpinBox, QDoubleSpinBox {
-            background-color: #1a1a28; color: #ccc;
-            border: 1px solid #33334a; padding: 1px 3px; border-radius: 3px;
-            font-size: 11px; min-height: 20px;
+            background-color: #1a1a26; color: #ccc;
+            border: 1px solid #2a2a3e; padding: 1px 6px; border-radius: 4px;
+            font-size: 11px; min-height: 22px;
         }
         QSpinBox:focus, QDoubleSpinBox:focus { border-color: #5a8ec5; }
+        QSpinBox::up-button, QDoubleSpinBox::up-button,
+        QSpinBox::down-button, QDoubleSpinBox::down-button {
+            background-color: #22223a; border: 1px solid #2a2a3e;
+            width: 18px;
+        }
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+            background-color: #2e2e4a;
+        }
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { width: 6px; height: 6px; }
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { width: 6px; height: 6px; }
+        QSlider::groove:horizontal {
+            background: #1a1a26; border: 1px solid #2a2a3e;
+            height: 6px; border-radius: 3px;
+        }
+        QSlider::handle:horizontal {
+            background: #3a6ea5; border: 1px solid #5a8ec5;
+            width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+        }
+        QSlider::handle:horizontal:hover { background: #4a7eb5; }
+        QSlider::sub-page:horizontal { background: #3a6ea5; border-radius: 3px; }
+        QLabel#titleLbl {
+            font-size: 14px; font-weight: bold; color: #8ab4f8;
+            padding: 4px 0; letter-spacing: 1px;
+        }
     """
 
     def __init__(self, config: Config, esp: MecchaESP, tabs=None):
         super().__init__()
         self.config = config
         self.esp = esp
-        self._active_tabs = tabs or ["ESP", "HEALTH", "RADAR", "AIMBOT", "Camouflage"]
+        self._active_tabs = tabs or ["ESP", "HEALTH", "VISUAL", "RADAR", "AIMBOT", "PLAYER"]
         self.setWindowTitle("Meccha Chameleon Tools")
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._drag_pos = None
         self._key_recorder = KeyRecorder(self._on_key_recorded)
+        self._container = None
+        self._outer_layout = QVBoxLayout(self)
+        self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._build_ui()
-        self.setFixedSize(500, 560)
+        self.setFixedSize(520, 600)
 
     def _close_app(self):
         QApplication.quit()
 
+    def _switch_language(self, lang_code):
+        self.config.language = lang_code
+        _tr.set_language(lang_code)
+        self._rebuild_ui()
+
+    def _rebuild_ui(self):
+        old_pos = self.pos()
+        if self._container:
+            self._outer_layout.removeWidget(self._container)
+            self._container.setParent(None)
+            self._container.deleteLater()
+            self._container = None
+        self._pages = {}
+        self._key_recorder = KeyRecorder(self._on_key_recorded)
+        self._build_ui()
+        self.move(old_pos)
+
     def _on_key_recorded(self, name):
         self.config.aimbot_key = name
-        self.lbl_aim_key.setText(f"Aim Key: {name}")
+        self.lbl_aim_key.setText(_tr("Aim Key: {key}", key=name))
         self.btn_record_key.setEnabled(True)
-        self.btn_record_key.setText("Record Key")
+        self.btn_record_key.setText(_tr("Record Key"))
+
+    def _on_magnet_key_recorded(self, name):
+        self.config.magnet_hold_key = name
+        self.lbl_magnet_key.setText(name)
+        self.btn_record_magnet.setEnabled(True)
+        self.btn_record_magnet.setText(_tr("Record"))
+
+    def _on_tp_key_recorded(self, name):
+        self.config.teleport_collectible_key = name
+        self.lbl_tp_key.setText(name)
+        self.btn_record_tp.setEnabled(True)
+        self.btn_record_tp.setText(_tr("Record"))
 
     def _build_ui(self):
         container = QFrame(self)
         container.setObjectName("menuFrame")
+        self._container = container
         container.setStyleSheet(self.STYLE)
         outer = QVBoxLayout(container)
         outer.setContentsMargins(12, 8, 12, 8)
         outer.setSpacing(6)
 
-        # Title
-        title = QLabel("MECCA CHAMELION TOOLS")
+        title = QLabel(_tr("MECCA CHAMELEON TOOLS"))
         title.setObjectName("titleLbl")
         title.setAlignment(Qt.AlignCenter)
         outer.addWidget(title)
 
-        # Tab list + stacked pages
         body = QHBoxLayout()
         body.setSpacing(8)
 
@@ -389,11 +450,11 @@ class Menu(QWidget):
         self.tab_list.setFocusPolicy(Qt.NoFocus)
         self.tab_list.setStyleSheet("""
             QListWidget {
-                background: #1a1a28; border: 1px solid #2a2a3e;
+                background: #1a1a26; border: 1px solid #2a2a3e;
                 border-radius: 6px; padding: 4px; outline: none;
             }
             QListWidget::item {
-                color: #888; padding: 8px 6px; border-radius: 4px;
+                color: #777; padding: 8px 6px; border-radius: 4px;
                 font-size: 11px; font-weight: bold;
             }
             QListWidget::item:selected {
@@ -402,8 +463,20 @@ class Menu(QWidget):
             QListWidget::item:hover:!selected {
                 background: #22223a; color: #aaa;
             }
+            QListWidget::vertical-scrollbar {
+                background: #12121a; width: 8px; border-radius: 4px;
+            }
+            QListWidget::vertical-scrollbar-handle {
+                background: #2a2a3e; min-height: 20px; border-radius: 4px;
+            }
+            QListWidget::vertical-scrollbar-handle:hover {
+                background: #3a3a5a;
+            }
+            QListWidget::vertical-scrollbar-add-line, QListWidget::vertical-scrollbar-sub-line {
+                height: 0px;
+            }
         """)
-        self.tab_list.addItems(self._active_tabs)
+        self.tab_list.addItems([_tr(t) for t in self._active_tabs])
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
@@ -420,49 +493,73 @@ class Menu(QWidget):
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
 
-        # Bottom bar
         bar = QHBoxLayout()
         bar.setSpacing(8)
-        self.btn_save = QPushButton("Save Config")
+        self.btn_save = QPushButton(_tr("Save Config"))
         self.btn_save.clicked.connect(self._save_config)
-        self.btn_close = QPushButton("Close")
-        self.btn_close.clicked.connect(self._close_app)
-        self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; } QPushButton:hover { background-color: #5a2a2a; }")
-
-        self.btn_load = QPushButton("Load Config")
+        self.btn_load = QPushButton(_tr("Load Config"))
         self.btn_load.clicked.connect(self._load_config)
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton(_tr("Close"))
         self.btn_close.clicked.connect(self._close_app)
-        self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; } QPushButton:hover { background-color: #5a2a2a; }")
+        self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; color: #e88; } QPushButton:hover { background-color: #5a2a2a; color: #faa; }")
 
-        hint = QLabel("Ins/F1 toggle | Drag to move | END=Exit")
+        hint = QLabel(_tr("Ins/F1 toggle | Drag to move | END=Exit"))
         hint.setStyleSheet("color: #555; font-size: 9px;")
-        wm = QLabel("Meccha Chameleon Tools")
-        wm.setStyleSheet("color: #ffffff18; font-size: 7px;")
         bar.addWidget(self.btn_save)
         bar.addWidget(self.btn_load)
         bar.addWidget(self.btn_close)
         bar.addStretch()
         bar.addWidget(hint)
-        bar.addWidget(wm)
         outer.addLayout(bar)
 
-        outer2 = QVBoxLayout(self)
-        outer2.addWidget(container)
-        outer2.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(outer2)
+        lang_row = QHBoxLayout()
+        lang_row.setSpacing(6)
+        lang_label = QLabel(_tr("Language:"))
+        lang_label.setStyleSheet("color: #888; font-size: 10px;")
+        self.lang_combo = QComboBox()
+        lang_codes = list(LANGUAGE_NAMES.keys())
+        self.lang_combo.addItems([LANGUAGE_NAMES[k] for k in lang_codes])
+        self.lang_combo.setCurrentIndex(lang_codes.index(self.config.language) if self.config.language in lang_codes else 0)
+        self.lang_combo.currentIndexChanged.connect(lambda idx: self._switch_language(lang_codes[idx]))
+        self.lang_combo.setFixedWidth(130)
+        lang_row.addWidget(lang_label)
+        lang_row.addWidget(self.lang_combo)
+        lang_row.addStretch()
+        outer.addLayout(lang_row)
 
-        # Build each active tab page
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
+        github_link = QLabel('<a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools" style="color: #8ab4f8; text-decoration: none; font-size: 9px;">GitHub</a>')
+        github_link.setOpenExternalLinks(True)
+        github_link.setStyleSheet("font-size: 9px;")
+        release_label = QLabel("v1.8.1-beta")
+        release_label.setStyleSheet("color: #666; font-size: 9px;")
+        copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #888; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
+        copyright_link.setOpenExternalLinks(True)
+        copyright_link.setStyleSheet("font-size: 9px;")
+        footer.addWidget(github_link)
+        footer.addStretch()
+        footer.addWidget(release_label)
+        footer.addStretch()
+        footer.addWidget(copyright_link)
+        outer.addLayout(footer)
+
+        self._outer_layout.addWidget(container)
+
         if "ESP" in self._active_tabs:
             self._build_esp_tab()
         if "HEALTH" in self._active_tabs:
             self._build_health_tab()
+        if "VISUAL" in self._active_tabs:
+            self._build_visual_tab()
         if "RADAR" in self._active_tabs:
             self._build_radar_tab()
         if "AIMBOT" in self._active_tabs:
             self._build_aimbot_tab()
-        if "Camouflage" in self._active_tabs:
-            self._build_camo_tab()
+        if "PLAYER" in self._active_tabs:
+            self._build_player_tab()
+        if "CAMOUFLAGE" in self._active_tabs:
+            self._build_camouflage_tab()
 
     def _switch_tab(self, idx):
         if 0 <= idx < len(self._active_tabs):
@@ -473,27 +570,27 @@ class Menu(QWidget):
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(4)
-        self.cb_enabled = self._chk("ESP Enabled","enabled")
+        self.cb_enabled = self._chk(_tr("ESP Enabled"), "enabled")
         lo.addWidget(self.cb_enabled)
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.cb_dot = self._chk("Dot","dot_esp")
-        self.cb_box = self._chk("2D Box","box_esp")
-        self.cb_skeleton = self._chk("Skeleton","skeleton_esp")
+        self.cb_dot = self._chk(_tr("Dot"), "dot_esp")
+        self.cb_box = self._chk(_tr("2D Box"), "box_esp")
+        self.cb_skeleton = self._chk(_tr("Skeleton"), "skeleton_esp")
         row.addWidget(self.cb_dot)
         row.addWidget(self.cb_box)
         row.addWidget(self.cb_skeleton)
         lo.addLayout(row)
-        for cfg, label in [("show_local","Show Local Player"), ("show_names","Show Names"),
-                           ("show_distance","Show Distance"), ("snap_lines","Snap Lines"),
-                           ("enemy_only","Enemy Only"), ("show_roles","Show Roles"),
-                           ("team_filter","Team Filter"), ("distance_scaling","Dist. Scaling")]:
+        for cfg, label in [("show_local", _tr("Show Local Player")), ("show_names", _tr("Show Names")),
+                           ("show_distance", _tr("Show Distance")), ("snap_lines", _tr("Snap Lines")),
+                           ("enemy_only", _tr("Enemy Only")), ("show_roles", _tr("Show Roles")),
+                           ("team_filter", _tr("Team Filter")), ("distance_scaling", _tr("Dist. Scaling"))]:
             cb = self._chk(label, cfg)
             lo.addWidget(cb)
-        self.cb_corner = self._chk("Corner Box","corner_box")
+        self.cb_corner = self._chk(_tr("Corner Box"), "corner_box")
         lo.addWidget(self.cb_corner)
         dr = QHBoxLayout()
-        dr.addWidget(QLabel("Dot Radius:"))
+        dr.addWidget(QLabel(_tr("Dot Radius:")))
         self.spn_dot = QSpinBox()
         self.spn_dot.setRange(2, 32)
         self.spn_dot.setValue(self.config.dot_radius)
@@ -507,12 +604,12 @@ class Menu(QWidget):
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(4)
-        self.cb_hp = self._chk("Health Bar","health_bar")
-        self.cb_shield = self._chk("Shield Bar","shield_bar")
+        self.cb_hp = self._chk(_tr("Health Bar"), "health_bar")
+        self.cb_shield = self._chk(_tr("Shield Bar"), "shield_bar")
         lo.addWidget(self.cb_hp)
         lo.addWidget(self.cb_shield)
         hr = QHBoxLayout()
-        hr.addWidget(QLabel("Model Height:"))
+        hr.addWidget(QLabel(_tr("Model Height:")))
         self.spn_height = QSpinBox()
         self.spn_height.setRange(50, 250)
         self.spn_height.setValue(int(self.config.box_height_world))
@@ -520,7 +617,7 @@ class Menu(QWidget):
         hr.addWidget(self.spn_height)
         lo.addLayout(hr)
         yr = QHBoxLayout()
-        yr.addWidget(QLabel("Y Offset:"))
+        yr.addWidget(QLabel(_tr("Y Offset:")))
         self.spn_yoff = QSpinBox()
         self.spn_yoff.setRange(-50, 50)
         self.spn_yoff.setValue(self.config.box_y_offset)
@@ -529,15 +626,75 @@ class Menu(QWidget):
         lo.addLayout(yr)
         lo.addStretch()
 
+    def _build_visual_tab(self):
+        p = self._pages["VISUAL"]
+        lo = QVBoxLayout(p)
+        lo.setContentsMargins(4, 4, 4, 4)
+        lo.setSpacing(4)
+        hdr = QLabel(_tr("PER-ROLE VISUALS"))
+        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr)
+        self.cb_hunter = self._chk(_tr("Hunter ESP"), "hunter_esp")
+        self.cb_survivor = self._chk(_tr("Survivor ESP"), "survivor_esp")
+        lo.addWidget(self.cb_hunter)
+        lo.addWidget(self.cb_survivor)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #2a2a3e;")
+        lo.addWidget(sep)
+        hdr2 = QLabel(_tr("DRAW OPTIONS"))
+        hdr2.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr2)
+        for cfg, label in [("draw_all", _tr("Draw All Actors")), ("draw_all_names", _tr("Draw All Names")),
+                           ("invincible_detect", _tr("Detect Invincible")),
+                           ("disable_buried", _tr("Disable Too Buried")),
+                           ("show_background_geo", _tr("Show Background Geometry")),
+                           ("show_cursor", _tr("Show Cursor"))]:
+            cb = self._chk(label, cfg)
+            lo.addWidget(cb)
+        dr = QHBoxLayout()
+        dr.addWidget(QLabel(_tr("Draw All Range:")))
+        self.spn_draw_range = QSpinBox()
+        self.spn_draw_range.setRange(500, 50000)
+        self.spn_draw_range.setSingleStep(500)
+        self.spn_draw_range.setValue(int(self.config.draw_all_max_distance))
+        self.spn_draw_range.valueChanged.connect(lambda v: setattr(self.config, "draw_all_max_distance", float(v)))
+        dr.addWidget(self.spn_draw_range)
+        lo.addLayout(dr)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("color: #2a2a3e;")
+        lo.addWidget(sep2)
+        hdr3 = QLabel(_tr("APPEARANCE"))
+        hdr3.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr3)
+        lr = QHBoxLayout()
+        lr.addWidget(QLabel(_tr("Line Thickness:")))
+        self.spn_line = QSpinBox()
+        self.spn_line.setRange(1, 8)
+        self.spn_line.setValue(self.config.line_thickness)
+        self.spn_line.valueChanged.connect(lambda v: setattr(self.config, "line_thickness", v))
+        lr.addWidget(self.spn_line)
+        lo.addLayout(lr)
+        pr = QHBoxLayout()
+        pr.addWidget(QLabel(_tr("Point Size:")))
+        self.spn_point = QSpinBox()
+        self.spn_point.setRange(1, 8)
+        self.spn_point.setValue(self.config.point_size)
+        self.spn_point.valueChanged.connect(lambda v: setattr(self.config, "point_size", v))
+        pr.addWidget(self.spn_point)
+        lo.addLayout(pr)
+        lo.addStretch()
+
     def _build_radar_tab(self):
         p = self._pages["RADAR"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(4)
-        self.cb_radar = self._chk("Radar Enabled","radar_enabled")
+        self.cb_radar = self._chk(_tr("Radar Enabled"), "radar_enabled")
         lo.addWidget(self.cb_radar)
         sr = QHBoxLayout()
-        sr.addWidget(QLabel("Radar Size:"))
+        sr.addWidget(QLabel(_tr("Radar Size:")))
         self.spn_radar_size = QSpinBox()
         self.spn_radar_size.setRange(80, 400)
         self.spn_radar_size.setValue(self.config.radar_size)
@@ -545,7 +702,7 @@ class Menu(QWidget):
         sr.addWidget(self.spn_radar_size)
         lo.addLayout(sr)
         rr = QHBoxLayout()
-        rr.addWidget(QLabel("Radar Range:"))
+        rr.addWidget(QLabel(_tr("Radar Range:")))
         self.spn_radar_range = QSpinBox()
         self.spn_radar_range.setRange(1000, 50000)
         self.spn_radar_range.setSingleStep(500)
@@ -560,19 +717,19 @@ class Menu(QWidget):
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(4)
-        self.cb_aimbot = self._chk("Aimbot Enabled","aimbot_enabled")
-        self.cb_aim_fov = self._chk("Show FOV Circle","aimbot_show_fov")
+        self.cb_aimbot = self._chk(_tr("Aimbot Enabled"), "aimbot_enabled")
+        self.cb_aim_fov = self._chk(_tr("Show FOV Circle"), "aimbot_show_fov")
         lo.addWidget(self.cb_aimbot)
         lo.addWidget(self.cb_aim_fov)
         kr = QHBoxLayout()
-        self.lbl_aim_key = QLabel("Aim Key: " + self.config.aimbot_key)
-        self.btn_record_key = QPushButton("Record Key")
+        self.lbl_aim_key = QLabel(_tr("Aim Key: {key}", key=self.config.aimbot_key))
+        self.btn_record_key = QPushButton(_tr("Record Key"))
         self.btn_record_key.clicked.connect(self._start_aim_key_record)
         kr.addWidget(self.lbl_aim_key)
         kr.addWidget(self.btn_record_key)
         lo.addLayout(kr)
         fr = QHBoxLayout()
-        fr.addWidget(QLabel("FOV Radius:"))
+        fr.addWidget(QLabel(_tr("FOV Radius:")))
         self.spn_aim_fov = QSpinBox()
         self.spn_aim_fov.setRange(10, 600)
         self.spn_aim_fov.setValue(self.config.aimbot_fov)
@@ -580,7 +737,7 @@ class Menu(QWidget):
         fr.addWidget(self.spn_aim_fov)
         lo.addLayout(fr)
         sr = QHBoxLayout()
-        sr.addWidget(QLabel("Smooth:"))
+        sr.addWidget(QLabel(_tr("Smooth:")))
         self.spn_aim_smooth = QDoubleSpinBox()
         self.spn_aim_smooth.setRange(0.01, 1.0)
         self.spn_aim_smooth.setSingleStep(0.05)
@@ -589,55 +746,181 @@ class Menu(QWidget):
         sr.addWidget(self.spn_aim_smooth)
         lo.addLayout(sr)
         ar = QHBoxLayout()
-        ar.addWidget(QLabel("Target Offset:"))
+        ar.addWidget(QLabel(_tr("Target Offset:")))
         self.spn_aim_off = QSpinBox()
         self.spn_aim_off.setRange(-200, 200)
         self.spn_aim_off.setValue(int(self.config.aimbot_target_offset))
         self.spn_aim_off.valueChanged.connect(lambda v: setattr(self.config, "aimbot_target_offset", float(v)))
         ar.addWidget(self.spn_aim_off)
         lo.addLayout(ar)
-        lo.addStretch()
-
-    def _build_camo_tab(self):
-        p = self._pages["Camouflage"]
-        lo = QVBoxLayout(p)
-        lo.setContentsMargins(8, 8, 8, 8)
-        lo.setSpacing(6)
-        hdr = QLabel("CAMOUFLAGE")
-        hdr.setStyleSheet("font-size: 13px; font-weight: bold; color: #8ab4f8; padding: 2px 0;")
-        lo.addWidget(hdr)
-        self.cb_camo = self._chk("Enable Camouflage","camouflage_enabled")
-        lo.addWidget(self.cb_camo)
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("color: #2a2a3e;")
         lo.addWidget(sep)
-        info = QLabel("Press F10 in-game to apply camouflage paint.\nThe tool auto-launches the bridge and triggers F10 for you.")
-        info.setStyleSheet("color: #aaa; font-size: 11px; padding: 4px 0;")
+        hdr = QLabel(_tr("MAGNET AIM ASSIST"))
+        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr)
+        self.cb_magnet = self._chk(_tr("Magnet Enabled"), "magnet_enabled")
+        lo.addWidget(self.cb_magnet)
+        mkr = QHBoxLayout()
+        mkr.addWidget(QLabel(_tr("Magnet Key:")))
+        self.lbl_magnet_key = QLabel(self.config.magnet_hold_key)
+        self.btn_record_magnet = QPushButton(_tr("Record"))
+        self.btn_record_magnet.clicked.connect(self._start_magnet_key_record)
+        mkr.addWidget(self.lbl_magnet_key)
+        mkr.addWidget(self.btn_record_magnet)
+        lo.addLayout(mkr)
+        mfr = QHBoxLayout()
+        mfr.addWidget(QLabel(_tr("Magnet FOV:")))
+        self.spn_magnet_fov = QSpinBox()
+        self.spn_magnet_fov.setRange(10, 300)
+        self.spn_magnet_fov.setValue(self.config.magnet_fov)
+        self.spn_magnet_fov.valueChanged.connect(lambda v: setattr(self.config, "magnet_fov", v))
+        mfr.addWidget(self.spn_magnet_fov)
+        lo.addLayout(mfr)
+        msr = QHBoxLayout()
+        msr.addWidget(QLabel(_tr("Magnet Strength:")))
+        self.spn_magnet_str = QDoubleSpinBox()
+        self.spn_magnet_str.setRange(0.1, 1.0)
+        self.spn_magnet_str.setSingleStep(0.1)
+        self.spn_magnet_str.setValue(self.config.magnet_strength)
+        self.spn_magnet_str.valueChanged.connect(lambda v: setattr(self.config, "magnet_strength", v))
+        msr.addWidget(self.spn_magnet_str)
+        lo.addLayout(msr)
+        lo.addStretch()
+
+    def _build_player_tab(self):
+        p = self._pages["PLAYER"]
+        lo = QVBoxLayout(p)
+        lo.setContentsMargins(4, 4, 4, 4)
+        lo.setSpacing(4)
+        hdr = QLabel(_tr("PLAYER MODIFICATION"))
+        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr)
+        notice = QLabel(_tr("\u26a0 Host Only - These features only work when you are the game host"))
+        notice.setStyleSheet("color: #ff6b6b; font-size: 10px; font-weight: bold; background-color: #2a1a1a; padding: 4px; border-radius: 3px;")
+        notice.setWordWrap(True)
+        lo.addWidget(notice)
+        self.cb_player_mod = self._chk(_tr("Player Mod Enabled"), "player_mod_enabled")
+        lo.addWidget(self.cb_player_mod)
+        sr = QHBoxLayout()
+        sr.addWidget(QLabel(_tr("Speed Multiplier:")))
+        self.spn_speed = QDoubleSpinBox()
+        self.spn_speed.setRange(0.5, 10.0)
+        self.spn_speed.setSingleStep(0.5)
+        self.spn_speed.setValue(self.config.player_speed_mult)
+        self.spn_speed.valueChanged.connect(lambda v: setattr(self.config, "player_speed_mult", v))
+        sr.addWidget(self.spn_speed)
+        lo.addLayout(sr)
+        jr = QHBoxLayout()
+        jr.addWidget(QLabel(_tr("Jump Multiplier:")))
+        self.spn_jump = QDoubleSpinBox()
+        self.spn_jump.setRange(0.5, 10.0)
+        self.spn_jump.setSingleStep(0.5)
+        self.spn_jump.setValue(self.config.player_jump_mult)
+        self.spn_jump.valueChanged.connect(lambda v: setattr(self.config, "player_jump_mult", v))
+        jr.addWidget(self.spn_jump)
+        lo.addLayout(jr)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #2a2a3e;")
+        lo.addWidget(sep)
+        hdr2 = QLabel(_tr("COMMANDS"))
+        hdr2.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr2)
+        tkr = QHBoxLayout()
+        tkr.addWidget(QLabel(_tr("Teleport Collectible Key:")))
+        self.lbl_tp_key = QLabel(self.config.teleport_collectible_key)
+        self.btn_record_tp = QPushButton(_tr("Record"))
+        self.btn_record_tp.clicked.connect(self._start_tp_key_record)
+        tkr.addWidget(self.lbl_tp_key)
+        tkr.addWidget(self.btn_record_tp)
+        lo.addLayout(tkr)
+        info = QLabel(_tr("Hold the key above to teleport nearest item to you.\nSet speed/jump mult and enable Player Mod to apply."))
+        info.setStyleSheet("color: #888; font-size: 10px;")
         info.setWordWrap(True)
         lo.addWidget(info)
-        self.lbl_camo_status = QLabel("Ready \u2014 Press F10 to paint")
-        self.lbl_camo_status.setStyleSheet("color: #888; font-size: 10px; padding: 4px 0;")
-        lo.addWidget(self.lbl_camo_status)
-        btn_paint_now = QPushButton("Paint Now")
-        btn_paint_now.setFixedHeight(32)
-        btn_paint_now.setStyleSheet(
-            "QPushButton { background-color: #2a4a3a; border: 1px solid #3a6a4a;"
-            " border-radius: 4px; font-weight: bold; font-size: 12px; }"
-            " QPushButton:hover { background-color: #3a6a4a; }"
-        )
-        btn_paint_now.clicked.connect(self._paint_camo_now)
-        lo.addWidget(btn_paint_now)
-        btn_stop_camo = QPushButton("Stop Camo (F9)")
-        btn_stop_camo.setFixedHeight(32)
-        btn_stop_camo.setStyleSheet(
-            "QPushButton { background-color: #4a2a2a; border: 1px solid #6a3a3a;"
-            " border-radius: 4px; font-weight: bold; font-size: 12px; }"
-            " QPushButton:hover { background-color: #6a3a3a; }"
-        )
-        btn_stop_camo.clicked.connect(self._stop_camo_now)
-        lo.addWidget(btn_stop_camo)
         lo.addStretch()
+
+    def _build_camouflage_tab(self):
+        p = self._pages["CAMOUFLAGE"]
+        lo = QVBoxLayout(p)
+        lo.setContentsMargins(4, 4, 4, 4)
+        lo.setSpacing(6)
+        hdr = QLabel(_tr("CAMOUFLAGE"))
+        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        lo.addWidget(hdr)
+
+        self.cb_camo = self._chk(_tr("Enable Camouflage"), "camouflage_enabled")
+        lo.addWidget(self.cb_camo)
+
+        info = QLabel(_tr("Press F10 in-game to apply camouflage paint. The tool auto-launches the bridge and triggers F10 for you."))
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #aaa; font-size: 10px; background-color: #12121c; padding: 6px; border-radius: 4px; border: 1px solid #2a2a3e;")
+        lo.addWidget(info)
+
+        self.lbl_camo_status = QLabel(self.config.camouflage_status)
+        self.lbl_camo_status.setWordWrap(True)
+        self.lbl_camo_status.setStyleSheet("color: #8ab4f8; font-size: 11px; font-weight: bold; background-color: #12121c; padding: 6px; border-radius: 4px; border: 1px solid #2a2a3e;")
+        lo.addWidget(self.lbl_camo_status)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self.btn_paint = QPushButton(_tr("Paint Now"))
+        self.btn_paint.setStyleSheet("""
+            QPushButton {
+                background-color: #1e4a2a; color: #8f8;
+                border: 1px solid #2a6a3a; padding: 10px 20px;
+                border-radius: 6px; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #2a6a3a; border-color: #4a9a5a; }
+            QPushButton:pressed { background-color: #3a8a4a; }
+        """)
+        self.btn_paint.clicked.connect(self._on_paint_now)
+        btn_row.addWidget(self.btn_paint)
+
+        self.btn_stop = QPushButton(_tr("Stop Camo (F9)"))
+        self.btn_stop.setStyleSheet("""
+            QPushButton {
+                background-color: #4a1e1e; color: #f88;
+                border: 1px solid #6a2a2a; padding: 10px 20px;
+                border-radius: 6px; font-size: 13px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #6a2a2a; border-color: #8a3a3a; }
+            QPushButton:pressed { background-color: #8a3a3a; }
+        """)
+        self.btn_stop.clicked.connect(self._on_stop_camo)
+        btn_row.addWidget(self.btn_stop)
+
+        lo.addLayout(btn_row)
+        lo.addStretch()
+
+    def _on_paint_now(self):
+        try:
+            err = ensure_bridge_ready()
+            if err:
+                self.lbl_camo_status.setText(f"Error: {err}")
+                return
+            self.lbl_camo_status.setText(_tr("Painting..."))
+            self.btn_paint.setEnabled(False)
+            resp = paint_now()
+            if resp.get("success") is True:
+                self.lbl_camo_status.setText(_tr("Paint Complete!"))
+            else:
+                msg = resp.get("message", _tr("Paint Failed"))
+                self.lbl_camo_status.setText(f"Error: {msg}")
+        except Exception as e:
+            self.lbl_camo_status.setText(f"Error: {e}")
+        finally:
+            self.btn_paint.setEnabled(True)
+
+    def _on_stop_camo(self):
+        try:
+            stop_paint()
+        except Exception:
+            pass
+        self.lbl_camo_status.setText(_tr("Ready \u2014 Press F10 to paint"))
 
     def _chk(self, text, attr):
         cb = QCheckBox(text)
@@ -647,16 +930,29 @@ class Menu(QWidget):
 
     def _start_aim_key_record(self):
         self.btn_record_key.setEnabled(False)
-        self.btn_record_key.setText('Press key...')
+        self.btn_record_key.setText(_tr("Press key..."))
+        self._key_recorder = KeyRecorder(self._on_key_recorded)
+        self._key_recorder.start()
+
+    def _start_magnet_key_record(self):
+        self.btn_record_magnet.setEnabled(False)
+        self.btn_record_magnet.setText(_tr("Press key..."))
+        self._key_recorder = KeyRecorder(self._on_magnet_key_recorded)
+        self._key_recorder.start()
+
+    def _start_tp_key_record(self):
+        self.btn_record_tp.setEnabled(False)
+        self.btn_record_tp.setText(_tr("Press key..."))
+        self._key_recorder = KeyRecorder(self._on_tp_key_recorded)
         self._key_recorder.start()
 
     def _save_config(self):
         if save_config(self.config):
-            self.btn_save.setText('Config Saved!')
-            QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
+            self.btn_save.setText(_tr("Config Saved!"))
+            QTimer.singleShot(1500, lambda: self.btn_save.setText(_tr("Save Config")))
         else:
-            self.btn_save.setText('Save Failed!')
-            QTimer.singleShot(1500, lambda: self.btn_save.setText('Save Config'))
+            self.btn_save.setText(_tr("Save Failed!"))
+            QTimer.singleShot(1500, lambda: self.btn_save.setText(_tr("Save Config")))
 
     def _load_config(self):
         loaded = load_config()
@@ -664,38 +960,8 @@ class Menu(QWidget):
         for field in dc_fields(self.config):
             if hasattr(loaded, field.name):
                 setattr(self.config, field.name, getattr(loaded, field.name))
-        self.btn_load.setText('Config Loaded!')
-        QTimer.singleShot(1500, lambda: self.btn_load.setText('Load Config'))
-
-    def _paint_camo_now(self):
-        if hasattr(self, '_camo_thread') and self._camo_thread and self._camo_thread.is_alive():
-            return
-        self.lbl_camo_status.setText("Painting...")
-        self._camo_thread = threading.Thread(target=self._camo_menu_worker, daemon=True)
-        self._camo_thread.start()
-
-    def _camo_menu_worker(self):
-        ok = self.esp.camo_apply()
-        QTimer.singleShot(0, lambda: self._camo_menu_done(ok))
-
-    def _camo_menu_done(self, ok):
-        self.lbl_camo_status.setText("Painted!" if ok else "Paint failed")
-        QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F10 to paint"))
-
-    def _stop_camo_now(self):
-        if hasattr(self, '_stop_thread') and self._stop_thread and self._stop_thread.is_alive():
-            return
-        self.lbl_camo_status.setText("Stopping...")
-        self._stop_thread = threading.Thread(target=self._stop_camo_worker, daemon=True)
-        self._stop_thread.start()
-
-    def _stop_camo_worker(self):
-        ok = self.esp.camo_stop()
-        QTimer.singleShot(0, lambda: self._stop_camo_done(ok))
-
-    def _stop_camo_done(self, ok):
-        self.lbl_camo_status.setText("Stopped" if ok else "Stop failed")
-        QTimer.singleShot(2000, lambda: self.lbl_camo_status.setText("Ready \u2014 Press F10 to paint"))
+        self.btn_load.setText(_tr("Config Loaded!"))
+        QTimer.singleShot(1500, lambda: self.btn_load.setText(_tr("Load Config")))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -715,8 +981,6 @@ class Menu(QWidget):
 # Overlay widget
 # ---------------------------------------------------------------------------
 class Overlay(QWidget):
-    camo_done = pyqtSignal(bool)
-
     def __init__(self, esp: MecchaESP, config: Config):
         super().__init__()
         self.esp = esp
@@ -731,17 +995,9 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setWindowTitle("Meccha Chameleon Tools - Overlay")
         self._key_states = {}
-        self._f9_feedback = ""
-        self._f9_feedback_count = 0
-        # Debounce counters for phantom GetAsyncKeyState reads
-        # Time-based cooldown prevents phantom-read loops
-        self._f10_down_count = 0
-        self._f10_last_fire_ms = 0
-        self._f9_down_count = 0
-        self._f9_last_fire_ms = 0
-        self._camo_thread = None
-        self._camo_stop_event = threading.Event()
-        self.camo_done.connect(self._on_camo_done)
+        self._cursor_shown = True
+        self._tp_key_state = False
+        self._player_mod_active = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
         self.timer.start(16)
@@ -749,7 +1005,6 @@ class Overlay(QWidget):
         self.game_hwnd = self._find_game_window()
         self._resize_to_game()
 
-        # Poll menu toggle key
         self.key_timer = QTimer(self)
         self.key_timer.timeout.connect(self._poll_keys)
         self.key_timer.start(50)
@@ -789,38 +1044,30 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
-        # F10: Camouflage paint start (time-based cooldown prevents phantom GetAsyncKeyState loops)
-        VK_F10 = 0x79
-        f10_raw = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F10) & 0x8000)
-        if f10_raw:
-            self._f10_down_count += 1
-        else:
-            self._f10_down_count = 0
-        now_ms = int(time.time() * 1000)
-        if self._f10_down_count >= 2 and (now_ms - self._f10_last_fire_ms) > 3000:
-            self._trigger_photo_paint()
-            self._f10_last_fire_ms = now_ms
-            self._f10_down_count = 0
-        # F9: Camouflage paint stop (cancel) - time-based cooldown
-        VK_F9 = 0x78
-        f9_raw = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
-        if f9_raw:
-            self._f9_down_count += 1
-        else:
-            self._f9_down_count = 0
-        if self._f9_down_count >= 2 and (now_ms - self._f9_last_fire_ms) > 1000:
-            self._trigger_camo_stop()
-            self._f9_last_fire_ms = now_ms
-            self._f9_down_count = 0
-        # END key: exit application
         VK_END = 0x23
         end_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_END) & 0x8000)
         if end_down and not self._key_states.get("end"):
             QApplication.quit()
         self._key_states["end"] = end_down
-        # Decrement F10 feedback counter every poll tick
-        if self._f9_feedback_count > 0:
-            self._f9_feedback_count -= 1
+        cursor_should_be = not self.config.show_cursor
+        if cursor_should_be != self._cursor_shown:
+            while ctypes.windll.user32.ShowCursor(cursor_should_be) >= 0:
+                pass
+            while ctypes.windll.user32.ShowCursor(not cursor_should_be) < 0:
+                pass
+            ctypes.windll.user32.ShowCursor(cursor_should_be)
+            self._cursor_shown = cursor_should_be
+        tp_vk = vk_from_name(self.config.teleport_collectible_key)
+        tp_down = bool(ctypes.windll.user32.GetAsyncKeyState(tp_vk) & 0x8000)
+        if tp_down and not self._tp_key_state:
+            self.esp.teleport_collectible(self.config.teleport_collectible_key)
+        self._tp_key_state = tp_down
+        if self.config.player_mod_enabled and not self._player_mod_active:
+            self.esp.player_mod(self.config.player_speed_mult, self.config.player_jump_mult)
+            self._player_mod_active = True
+        elif not self.config.player_mod_enabled and self._player_mod_active:
+            self.esp.player_mod(1.0, 1.0)
+            self._player_mod_active = False
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -833,13 +1080,13 @@ class Overlay(QWidget):
 
         if not self.config.enabled:
             painter.setPen(QPen(QColor(255, 255, 255)))
-            painter.drawText(10, 20, "ESP OFF")
+            painter.drawText(10, 20, _tr("ESP OFF"))
             return
 
         cam = self.esp.get_camera()
         if not cam:
             painter.setPen(QPen(QColor(255, 255, 255)))
-            painter.drawText(10, 20, "NO CAMERA")
+            painter.drawText(10, 20, _tr("NO CAMERA"))
             return
 
         all_players = list(self.esp.iter_players(
@@ -879,15 +1126,31 @@ class Overlay(QWidget):
             sx, sy = screen_center
             sy += self.config.box_y_offset
 
-            # Pick color: visible/not-visible or team-based
+            is_hunter = pdata.get("is_hunter", False)
+            is_survivor = pdata.get("is_survivor", False)
+            if not is_local:
+                if is_hunter and not self.config.hunter_esp:
+                    continue
+                if is_survivor and not self.config.survivor_esp:
+                    continue
+            invincible = False
+            if self.config.invincible_detect and not is_local:
+                invincible = self.esp.get_invincible(actor)
             if is_local:
                 color = self.config.local_color
+            elif invincible:
+                color = self.config.invincible_color
+            elif is_hunter:
+                color = self.config.hunter_visual_color
+            elif is_survivor:
+                color = self.config.survivor_visual_color
             else:
-                visible = self.esp._is_visible(actor)
-                if visible and self.config.enemy_only:
-                    color = self.config.visible_color
-                elif not visible and self.config.enemy_only:
-                    color = self.config.not_visible_color
+                if self.config.enemy_only:
+                    visible = self.esp._is_visible(actor)
+                    if visible:
+                        color = self.config.visible_color
+                    else:
+                        color = self.config.not_visible_color
                 else:
                     color = self.config.enemy_color
 
@@ -900,12 +1163,13 @@ class Overlay(QWidget):
 
             rot = self.esp.get_actor_root_rotation(actor) if actor else None
             hw = self.config.box_height_world / 3.0
+            pen_width = max(1, self.config.line_thickness)
             if self.config.box_esp and not self.config.corner_box:
                 draw_2d_box(painter, pos, cam, w, h,
-                            self.config.box_height_world, hw, rot, color, scale)
+                            self.config.box_height_world, hw, rot, color, scale, pen_width)
             if self.config.corner_box:
                 draw_corner_box(painter, pos, cam, w, h,
-                                self.config.box_height_world, hw, rot, color, scale)
+                                self.config.box_height_world, hw, rot, color, scale, 0.25, pen_width)
 
             if self.config.skeleton_esp and actor and not is_local:
                 bones = self.esp.get_skeleton_positions(actor)
@@ -931,9 +1195,11 @@ class Overlay(QWidget):
 
             label_parts = []
             if self.config.show_names:
-                label_parts.append("YOU" if is_local else f"Enemy {idx}")
+                label_parts.append(_tr("YOU") if is_local else _tr("Enemy {idx}", idx=idx))
             if self.config.show_roles and role != "Unknown":
-                label_parts.append(role)
+                label_parts.append(_tr(role))
+            if invincible:
+                label_parts.append(_tr("INVINCIBLE"))
             if self.config.show_distance:
                 dm = int(d / 100)
                 label_parts.append(f"{dm}m")
@@ -944,22 +1210,44 @@ class Overlay(QWidget):
                 label_y = int(dsy)
                 painter.drawText(label_x, label_y, text)
 
+        if self.config.draw_all:
+            actor_count = 0
+            for adata in self.esp.iter_actors(max_actors=500, class_filter="Collectible"):
+                d = dist(adata["pos"], cam["loc"])
+                if d > self.config.draw_all_max_distance:
+                    continue
+                s = w2s(adata["pos"], cam, w, h)
+                if not s:
+                    continue
+                actor_count += 1
+                act_color = (100, 255, 100)
+                painter.setPen(QPen(QColor(*act_color), 1))
+                sx_a, sy_a = int(s[0]), int(s[1])
+                painter.drawEllipse(sx_a - 2, sy_a - 2, 4, 4)
+                if self.config.draw_all_names:
+                    cname = adata["class_name"][:20] if adata["class_name"] else "Actor"
+                    painter.drawText(sx_a + 4, sy_a + 4, cname)
+            if actor_count > 0:
+                painter.setPen(QPen(QColor(150, 255, 150)))
+                painter.drawText(w - 200, 60, _tr("Items: {count}", count=actor_count))
+
         non_local = [p for p in all_players if not p["is_local"]]
         painter.setPen(QPen(QColor(255, 255, 255)))
-        painter.drawText(10, 20, f"Players: {len(non_local)}")
+        painter.drawText(10, 20, _tr("Players: {count}", count=len(non_local)))
 
-        if self._f9_feedback_count > 0 and self._f9_feedback:
-            painter.setPen(QPen(QColor(0, 220, 120)))
-            painter.drawText(10, 40, self._f9_feedback)
-        else:
-            painter.setPen(QPen(QColor(80, 80, 80)))
-            painter.drawText(10, 40, "F10 = CAMOUFLAGE")
-
-        if self.config.aimbot_enabled:
+        if self.config.aimbot_enabled or self.config.magnet_enabled:
             cx, cy = w / 2, h / 2
-            best_target = self._find_best_target(cam, w, h)
+            magnet_active = self.config.magnet_enabled and self._magnet_key_held()
+            aim_active = self.config.aimbot_enabled and self._aim_key_held()
+            if magnet_active:
+                fov = self.config.magnet_fov
+            elif self.config.aimbot_enabled:
+                fov = self.config.aimbot_fov
+            else:
+                fov = 0
+            best_target = self._find_best_target(cam, w, h, fov if fov > 0 else None)
             if best_target:
-                if self.config.aimbot_show_fov:
+                if self.config.aimbot_show_fov and self.config.aimbot_enabled:
                     painter.setPen(QPen(QColor(255, 255, 255), 1))
                     painter.setBrush(Qt.NoBrush)
                     painter.drawEllipse(
@@ -968,14 +1256,15 @@ class Overlay(QWidget):
                         self.config.aimbot_fov * 2,
                         self.config.aimbot_fov * 2,
                     )
-                if self._aim_key_held():
+                if magnet_active:
+                    self._magnet_at(best_target[0], best_target[1])
+                elif aim_active:
                     self._aim_at(best_target[0], best_target[1])
 
-        # Watermark
         painter.setPen(QPen(QColor(255, 255, 255, 40)))
         wm_font = QFont("Segoe UI", 8)
         painter.setFont(wm_font)
-        painter.drawText(w - 160, h - 10, "Meccha Chameleon Tools")
+        painter.drawText(w - 160, h - 10, _tr("Meccha Chameleon Tools"))
         painter.setFont(font)
 
         if self.config.radar_enabled and local_pos:
@@ -997,42 +1286,15 @@ class Overlay(QWidget):
     # -----------------------------------------------------------------------
     # Aimbot
     # -----------------------------------------------------------------------
-    def _trigger_photo_paint(self):
-        if self._camo_thread and self._camo_thread.is_alive():
-            return
-        self._f9_feedback = "PAINTING..."
-        self._f9_feedback_count = 600
-        self._camo_thread = threading.Thread(target=self._camo_worker, daemon=True)
-        self._camo_thread.start()
-
-    def _camo_worker(self):
-        ok = self.esp.camo_apply()
-        self.camo_done.emit(ok)
-
-    def _on_camo_done(self, ok):
-        if ok:
-            self._f9_feedback = "CAMO F10 TRIGGERED"
-            self._f9_feedback_count = 200
-        else:
-            if self._camo_stop_event.is_set():
-                self._f9_feedback = "CAMO STOPPED (F9)"
-            else:
-                self._f9_feedback = "CAMO FAIL"
-            self._f9_feedback_count = 120
-        self._camo_thread = None
-        self._camo_stop_event.clear()
-
-    def _trigger_camo_stop(self):
-        if not self._camo_thread or not self._camo_thread.is_alive():
-            return
-        self._camo_stop_event.set()
-        self.esp.camo_stop()
-
     def _aim_key_held(self):
         vk = vk_from_name(self.config.aimbot_key)
         return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
 
-    def _find_best_target(self, camera, screen_w, screen_h):
+    def _magnet_key_held(self):
+        vk = vk_from_name(self.config.magnet_hold_key)
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+
+    def _find_best_target(self, camera, screen_w, screen_h, fov_override=None):
         world = self.esp._get_world()
         local_pc = self.esp._get_local_controller(world) if world else 0
         local_pawn = rp(self.esp.pm, local_pc + self.esp.offsets["APlayerController::AcknowledgedPawn"]) if local_pc else 0
@@ -1069,7 +1331,8 @@ class Overlay(QWidget):
             dx = s[0] - cx
             dy = s[1] - cy
             d = math.sqrt(dx * dx + dy * dy)
-            if d <= self.config.aimbot_fov and d < best_dist:
+            max_fov = fov_override if fov_override is not None else self.config.aimbot_fov
+            if d <= max_fov and d < best_dist:
                 best_dist = d
                 best_target = (aim_pos, camera)
         return best_target
@@ -1124,4 +1387,20 @@ class Overlay(QWidget):
         smooth = self.config.aimbot_smooth
         new_pitch = current[0] + (target_rot[0] - current[0]) * smooth
         new_yaw = current[1] + (target_rot[1] - current[1]) * smooth
+        self._write_control_rotation((new_pitch, new_yaw, current[2]))
+
+    def _magnet_at(self, target_pos, camera):
+        """Magnet aim: instant snap with smoothing option."""
+        if not camera:
+            return
+        current = self._read_control_rotation()
+        if current is None:
+            return
+        dx = target_pos[0] - camera["loc"][0]
+        dy = target_pos[1] - camera["loc"][1]
+        dz = target_pos[2] - camera["loc"][2]
+        target_rot = self._vector_to_rotation((dx, dy, dz))
+        strength = self.config.magnet_strength
+        new_pitch = current[0] + (target_rot[0] - current[0]) * strength
+        new_yaw = current[1] + (target_rot[1] - current[1]) * strength
         self._write_control_rotation((new_pitch, new_yaw, current[2]))

@@ -258,9 +258,51 @@ namespace sdk
         TArray<FPaintStroke> Strokes{};
     };
 
+    struct FCompactPaintStroke
+    {
+        std::int32_t SkeletalTriangleIndex{0};
+        std::uint8_t BarycentricXHigh{0};
+        std::uint8_t BarycentricXLow{0};
+        std::uint8_t BarycentricYHigh{0};
+        std::uint8_t BarycentricYLow{0};
+        std::uint8_t BarycentricZHigh{0};
+        std::uint8_t BarycentricZLow{0};
+        std::uint8_t Pad_0A[0x2]{};
+        float Radius{0.02f};
+        FColor AlbedoColor{};
+        std::uint8_t Metallic{0};
+        std::uint8_t Roughness{0};
+        EPaintChannel TargetChannel{EPaintChannel::Albedo};
+        std::uint8_t Pad_17{};
+        float EffectiveBrushWorldRadius{0.02f};
+        std::int32_t EffectiveSubdivisionLevel{0};
+        float EffectiveSubdivisionPixelSize{1.0f};
+        std::int32_t EffectiveTemplateResolution{0};
+        FGuid ReplicationSourceId{};
+    };
+
+    struct FCompactPaintStrokeBatch
+    {
+        TArray<FCompactPaintStroke> Strokes{};
+    };
+
     struct RuntimePaintableComponent_ServerPaintBatch
     {
         FPaintStrokeBatch Batch{};
+    };
+
+    struct RuntimePaintableComponent_ServerCompactPaintBatch
+    {
+        FCompactPaintStrokeBatch Batch{};
+    };
+
+    struct RuntimePaintableComponent_PaintAtUVWithBrush
+    {
+        FVector2D Uv{};
+        FPaintChannelData ChannelData{};
+        FRuntimeBrushSettings BrushSettings{};
+        EPaintChannel Channel{EPaintChannel::Albedo};
+        std::uint8_t Pad_59[0x7]{};
     };
 
     struct Controller_K2_GetPawn
@@ -271,11 +313,6 @@ namespace sdk
     struct Actor_K2_GetActorLocation
     {
         FVector ReturnValue{};
-    };
-
-    struct Actor_K2_GetActorRotation
-    {
-        FRotator ReturnValue{};
     };
 
     struct KismetRenderingLibrary_CreateRenderTarget2D
@@ -344,6 +381,17 @@ namespace sdk
         std::uint8_t Pad_1A[0x6]{};
     };
 
+    struct AActor_TakeDamage
+    {
+        float DamageAmount{0.0f};
+        std::uint8_t Pad_4[0x7C]{};
+        void* DamageEvent{nullptr};
+        void* EventInstigator{nullptr};
+        void* DamageCauser{nullptr};
+        float ReturnValue{0.0f};
+        std::uint8_t Pad_94[0x4]{};
+    };
+
     static_assert(sizeof(TArray<std::uint8_t>) == 0x10, "TArray layout mismatch");
     static_assert(sizeof(FVector2D) == 0x10, "FVector2D layout mismatch");
     static_assert(sizeof(FVector) == 0x18, "FVector layout mismatch");
@@ -365,9 +413,17 @@ namespace sdk
     static_assert(offsetof(FPaintStroke, ChannelData) == 0x90, "PaintStroke ChannelData offset mismatch");
     static_assert(offsetof(FPaintStroke, TargetChannel) == 0xB0, "PaintStroke TargetChannel offset mismatch");
     static_assert(sizeof(FPaintStrokeBatch) == 0x10, "PaintStrokeBatch layout mismatch");
+    static_assert(sizeof(FCompactPaintStroke) == 0x38, "CompactPaintStroke layout mismatch");
+    static_assert(offsetof(FCompactPaintStroke, Radius) == 0x0C, "CompactPaintStroke Radius offset mismatch");
+    static_assert(offsetof(FCompactPaintStroke, AlbedoColor) == 0x10, "CompactPaintStroke AlbedoColor offset mismatch");
+    static_assert(offsetof(FCompactPaintStroke, TargetChannel) == 0x16, "CompactPaintStroke TargetChannel offset mismatch");
+    static_assert(offsetof(FCompactPaintStroke, EffectiveBrushWorldRadius) == 0x18, "CompactPaintStroke EffectiveBrushWorldRadius offset mismatch");
+    static_assert(offsetof(FCompactPaintStroke, ReplicationSourceId) == 0x28, "CompactPaintStroke ReplicationSourceId offset mismatch");
+    static_assert(sizeof(FCompactPaintStrokeBatch) == 0x10, "CompactPaintStrokeBatch layout mismatch");
     static_assert(sizeof(RuntimePaintableComponent_ServerPaintBatch) == 0x10, "ServerPaintBatch params layout mismatch");
+    static_assert(sizeof(RuntimePaintableComponent_ServerCompactPaintBatch) == 0x10, "ServerCompactPaintBatch params layout mismatch");
+    static_assert(sizeof(RuntimePaintableComponent_PaintAtUVWithBrush) == 0x60, "PaintAtUVWithBrush params layout mismatch");
     static_assert(sizeof(Actor_K2_GetActorLocation) == 0x18, "K2_GetActorLocation params layout mismatch");
-    static_assert(sizeof(Actor_K2_GetActorRotation) == 0x18, "K2_GetActorRotation params layout mismatch");
     static_assert(sizeof(KismetRenderingLibrary_CreateRenderTarget2D) == 0x30, "CreateRenderTarget2D params layout mismatch");
     static_assert(offsetof(KismetRenderingLibrary_CreateRenderTarget2D, Format) == 0x10, "CreateRenderTarget2D Format offset mismatch");
     static_assert(offsetof(KismetRenderingLibrary_CreateRenderTarget2D, ClearColor) == 0x14, "CreateRenderTarget2D ClearColor offset mismatch");
