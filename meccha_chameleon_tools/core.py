@@ -860,13 +860,6 @@ class MecchaESP:
         for i, (pawn, ps, pos) in enumerate(raw_players):
             if not include_local and pawn == local_pawn:
                 continue
-            # Skip dead players but don't crash on health read failure
-            try:
-                hp, _ = self.get_health(pawn, ps) or (None, None)
-                if hp is not None and hp <= 0:
-                    continue
-            except Exception:
-                pass
             role, is_hunter, is_survivor = self._detect_role(pawn)
             is_enemy = False
             if is_hunter or is_survivor:
