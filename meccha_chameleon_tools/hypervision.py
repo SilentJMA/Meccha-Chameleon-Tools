@@ -62,6 +62,10 @@ def bridge_visibility_scan(tx, ty, tz, step=80, z_layers=20, radius=2000):
 
 
 def bridge_path_find(px, py, pz, tx, ty, tz, cloud):
+    return _send("path_find", {
+        "player_pos": [px, py, pz], "target_pos": [tx, ty, tz],
+        "exposure_cloud": cloud,
+    }, timeout=30)
 
 
 def bridge_start_hv(tx, ty, tz, px, py, pz, quality=1):
