@@ -111,17 +111,35 @@ def fetch_via_bridge():
 def fetch_via_python():
     from meccha_chameleon_tools.core import MecchaESP
     from meccha_chameleon_tools.hypervision import simplify_segments
-    print("[*] Python pymem fallback...")
+    import sys
+    print("[*] Python pymem fallback...", flush=True)
     try:
         esp = MecchaESP()
+        print("[+] Game connected, scanning terrain...", flush=True)
+        # Debug: check if any object matches the filter
+        match_count = 0
+        for obj in esp.objects.iter_objects():
+            try:
+                cls = esp.objects.class_name(obj)
+                if cls and any(v in cls for v in ("StaticMesh", "Mesh", "Building", "Wall", "Floor")):
+                    match_count += 1
+                    if match_count == 1:
+                        print(f"  Sample match: {cls}", flush=True)
+                if match_count > 100:
+                    break
+            except:
+                pass
+        print(f"  Found {match_count} matching classes", flush=True)
         segs = esp.scan_terrain()
         if segs:
             segs = simplify_segments(segs)
-            print(f"[+] Python returns {len(segs)} segs")
+            print(f"[+] Python returns {len(segs)} segs", flush=True)
             return segs
-        print("[!] Python scan returned 0 segments")
+        print("[!] Python scan returned 0 segments", flush=True)
     except Exception as e:
-        print(f"[!] Python fallback failed: {e}")
+        print(f"[!] Python fallback failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
     return None
 
 
