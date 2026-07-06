@@ -16,11 +16,13 @@ a = Analysis(
         (f"{pkg}/ui.py", pkg),
         (f"{pkg}/camo_entry.py", pkg),
         (f"{pkg}/hypervision.py", pkg),
+        (f"{pkg}/logger.py", pkg),
     ],
     hiddenimports=[
         "PyQt5", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets",
         "pymem", "win32gui",
         "meccha_chameleon_tools.hypervision",
+        "meccha_chameleon_tools.logger",
     ],
     excludes=["tkinter", "matplotlib", "numpy", "PIL", "pandas", "scipy", "notebook"],
     noarchive=False,
