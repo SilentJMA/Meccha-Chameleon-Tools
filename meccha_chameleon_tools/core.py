@@ -693,8 +693,11 @@ class MecchaESP:
                 continue
 
     def scan_terrain(self, center=None, range_xy=5000.0, z_samples=3, z_range=1000.0):
-        """Scan all UObjects with non-zero bounds for radar wall outlines."""
+        """Scan StaticMeshActors only (skip Function/Class/Package etc)."""
         segments = []
+        VALID_CLASSES = ("StaticMeshActor", "StaticMeshComponent", "SplineMeshComponent",
+                         "InstancedStaticMeshComponent", "Building", "Wall", "Floor",
+                         "SM_", "Chunk", "MeshActor", "BlockingVolume")
         if center is None:
             cam = self.get_camera()
             if not cam:
@@ -707,11 +710,13 @@ class MecchaESP:
         count = 0
         t0 = time.time()
         for obj in self.objects.iter_objects():
-            if count >= 5000:
+            if count >= 2000:
                 break
             try:
-                cls_name = self.objects.class_name(obj)
-                if not cls_name or cls_name.startswith("Default__"):
+                cls = self.objects.class_name(obj)
+                if not cls or cls.startswith("Default__"):
+                    continue
+                if not any(v in cls for v in VALID_CLASSES):
                     continue
                 root = rp(self.pm, obj + self.offsets.get("AActor::RootComponent", 0))
                 if not root:
@@ -719,6 +724,8 @@ class MecchaESP:
                 ox = rfloat(self.pm, root + 0x120)
                 oy = rfloat(self.pm, root + 0x124)
                 oz = rfloat(self.pm, root + 0x128)
+                if not (math.isfinite(ox) and math.isfinite(oy) and math.isfinite(oz)):
+                    continue
                 if abs(ox) < 1 and abs(oy) < 1 and abs(oz) < 1:
                     continue
                 if abs(ox - center[0]) > half or abs(oy - center[1]) > half:
@@ -726,7 +733,9 @@ class MecchaESP:
                 be_x = abs(rfloat(self.pm, root + 0x158))
                 be_y = abs(rfloat(self.pm, root + 0x15C))
                 be_z = abs(rfloat(self.pm, root + 0x160))
-                if max(be_x, be_y, be_z) < 10:
+                if not (math.isfinite(be_x) and math.isfinite(be_y) and math.isfinite(be_z)):
+                    continue
+                if max(be_x, be_y, be_z) < 10 or max(be_x, be_y, be_z) > 50000:
                     continue
                 for zi in range(z_samples):
                     test_z = z_min + zi * z_step
