@@ -62,6 +62,22 @@ def bridge_visibility_scan(tx, ty, tz, step=80, z_layers=20, radius=2000):
 
 
 def bridge_path_find(px, py, pz, tx, ty, tz, cloud):
+
+
+def bridge_start_hv(tx, ty, tz, px, py, pz, quality=1):
+    return _send("start_hypervision", {
+        "target": [tx, ty, tz], "player": [px, py, pz], "quality": quality,
+    }, timeout=60)
+
+
+def bridge_update_hv(tx, ty, tz, px, py, pz):
+    return _send("update_hypervision", {
+        "target": [tx, ty, tz], "player": [px, py, pz],
+    }, timeout=10)
+
+
+def bridge_stop_hv():
+    return _send("stop_hypervision", timeout=10)
     return _send("path_find", {
         "player_pos": [px, py, pz], "target_pos": [tx, ty, tz],
         "exposure_cloud": cloud,

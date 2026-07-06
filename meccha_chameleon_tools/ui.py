@@ -24,7 +24,8 @@ from meccha_chameleon_tools.core import (
 from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
 from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, stop_paint, is_bridge_alive
-from meccha_chameleon_tools.hypervision import HyperVisionEngine, world_to_radar, simplify_segments
+from meccha_chameleon_tools.hypervision import (HyperVisionEngine, world_to_radar, simplify_segments,
+                                                  bridge_start_hv, bridge_update_hv, bridge_stop_hv)
 
 
 # ---------------------------------------------------------------------------
@@ -1219,7 +1220,7 @@ class Overlay(QWidget):
             pass
 
     def _hv_scan_tick(self):
-        if not self.esp or not self.config.hypervision_enabled:
+        if not self.esp:
             return
         try:
             self.hv.check_bridge()
@@ -1230,6 +1231,29 @@ class Overlay(QWidget):
                 players = list(self._cached_players)
             if not players:
                 return
+
+            # Manage 3D in-engine rendering if bridge is alive
+            if self.hv.bridge_alive and self.config.hypervision_enabled:
+                enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
+                if enemies:
+                    t = enemies[0]
+                    tp = t["pos"]; pp = cam["loc"]
+                    q = {"low": 0, "medium": 1, "high": 2, "ultra": 2}.get(self.config.hv_quality, 1)
+                    if not hasattr(self, '_hv3d_started') or not self._hv3d_started:
+                        bridge_start_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2], q)
+                        self._hv3d_started = True
+                    else:
+                        bridge_update_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2])
+                else:
+                    if getattr(self, '_hv3d_started', False):
+                        bridge_stop_hv()
+                        self._hv3d_started = False
+            elif not self.config.hypervision_enabled:
+                if getattr(self, '_hv3d_started', False):
+                    bridge_stop_hv()
+                    self._hv3d_started = False
+
+            # Also update 2D cache for overlay rendering
             self.hv.update_targets(players, cam["loc"])
         except Exception:
             pass

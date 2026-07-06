@@ -137,6 +137,9 @@ namespace
     auto handle_scan_terrain(const std::string& payload) -> std::string;
     auto handle_visibility_scan(const std::string& payload) -> std::string;
     auto handle_path_find(const std::string& payload) -> std::string;
+    auto handle_start_hypervision(const std::string& payload) -> std::string;
+    auto handle_update_hypervision(const std::string& payload) -> std::string;
+    auto handle_stop_hypervision(const std::string&) -> std::string;
     void __fastcall hooked_process_event(void* object, void* function, void* params);
     LRESULT CALLBACK message_hook_proc(int code, WPARAM wparam, LPARAM lparam);
 
@@ -13595,7 +13598,7 @@ namespace
         }
         if (line.find("\"type\":\"capabilities\"") != std::string::npos)
         {
-            std::string commands = "[\"ping\",\"capabilities\",\"paint_full_route\",\"paint_replication_probe\",\"cancel_paint\",\"shutdown\",\"teleport\",\"teleport_collectible\",\"player_mod\",\"kill\",\"set_fov\",\"rotate\",\"line_trace\",\"scan_terrain\",\"visibility_scan\",\"path_find\"]";
+            std::string commands = "[\"ping\",\"capabilities\",\"paint_full_route\",\"paint_replication_probe\",\"cancel_paint\",\"shutdown\",\"teleport\",\"teleport_collectible\",\"player_mod\",\"kill\",\"set_fov\",\"rotate\",\"line_trace\",\"scan_terrain\",\"visibility_scan\",\"path_find\",\"start_hypervision\",\"update_hypervision\",\"stop_hypervision\"]";
             return std::string("{\"success\":true,\"stage\":\"capabilities\",\"applied\":0,\"failures\":0,") +
                    "\"message\":\"ok\",\"timing_ms\":{}," +
                    "\"metadata\":{\"commands\":" + commands + "," +
@@ -13682,6 +13685,18 @@ namespace
         if (line.find("\"type\":\"path_find\"") != std::string::npos)
         {
             return handle_path_find(line);
+        }
+        if (line.find("\"type\":\"start_hypervision\"") != std::string::npos)
+        {
+            return handle_start_hypervision(line);
+        }
+        if (line.find("\"type\":\"update_hypervision\"") != std::string::npos)
+        {
+            return handle_update_hypervision(line);
+        }
+        if (line.find("\"type\":\"stop_hypervision\"") != std::string::npos)
+        {
+            return handle_stop_hypervision(line);
         }
         return response_json(false, "unknown_command", 0, 1, "unknown bridge command");
     }
