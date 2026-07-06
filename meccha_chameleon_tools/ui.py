@@ -24,6 +24,7 @@ from meccha_chameleon_tools.core import (
 from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
 from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, stop_paint, is_bridge_alive
+from meccha_chameleon_tools.hypervision import HyperVisionEngine, world_to_radar, simplify_segments
 
 
 # ---------------------------------------------------------------------------
@@ -1159,7 +1160,11 @@ class Overlay(QWidget):
         self._terrain_cache = None
         self._terrain_timer = QTimer(self)
         self._terrain_timer.timeout.connect(self._refresh_terrain)
-        self._terrain_timer.start(5000)
+        self._terrain_timer.start(15000)
+        self.hv = HyperVisionEngine(config)
+        self._hv_timer = QTimer(self)
+        self._hv_timer.timeout.connect(self._hv_scan_tick)
+        self._hv_timer.start(500)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick_overlay)
@@ -1200,10 +1205,32 @@ class Overlay(QWidget):
         if not self.esp or not self.config.radar_terrain:
             return
         try:
-            segs = self.esp.scan_terrain()
-            if segs:
-                from meccha_chameleon_tools.hypervision import simplify_segments
-                self._terrain_cache = simplify_segments(segs)
+            self.hv.check_bridge()
+            cam = self.esp.get_camera()
+            if cam:
+                segs = self.hv.refresh_terrain(cam["loc"], force=False)
+                if not segs and self.hv.bridge_alive:
+                    pass
+                elif not segs:
+                    segs = self.esp.scan_terrain()
+                if segs:
+                    self._terrain_cache = simplify_segments(segs)
+        except Exception:
+            pass
+
+    def _hv_scan_tick(self):
+        if not self.esp or not self.config.hypervision_enabled:
+            return
+        try:
+            self.hv.check_bridge()
+            cam = self.esp.get_camera()
+            if not cam:
+                return
+            with self._cache_lock:
+                players = list(self._cached_players)
+            if not players:
+                return
+            self.hv.update_targets(players, cam["loc"])
         except Exception:
             pass
 
@@ -1524,6 +1551,33 @@ class Overlay(QWidget):
         non_local = [p for p in all_players if not p["is_local"]]
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.drawText(10, 20, _tr("Players: {count}", count=len(non_local)))
+
+        # HyperVision overlay: exposure cloud + nav paths
+        if self.config.hypervision_enabled and cam:
+            try:
+                hv_paths, hv_dots = self.hv.get_render_data(cam, w, h)
+                # Exposure dots (semi-transparent green circles)
+                for dx, dy, _ in hv_dots:
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(0, 255, 100, 60))
+                    painter.drawEllipse(dx - 6, dy - 6, 12, 12)
+                    painter.setBrush(QColor(0, 255, 100, 30))
+                    painter.drawEllipse(dx - 10, dy - 10, 20, 20)
+                # Nav paths (dashed green lines)
+                for pts in hv_paths:
+                    for i in range(len(pts) - 1):
+                        sx1, sy1, _ = pts[i]
+                        sx2, sy2, _ = pts[i + 1]
+                        painter.setPen(QPen(QColor(0, 255, 50, 180), 2))
+                        painter.drawLine(sx1, sy1, sx2, sy2)
+                    # Path end marker
+                    if pts:
+                        ex_, ey_, _ = pts[-1]
+                        painter.setPen(QPen(QColor(0, 255, 50), 3))
+                        painter.setBrush(QColor(0, 255, 50, 180))
+                        painter.drawEllipse(ex_ - 4, ey_ - 4, 8, 8)
+            except Exception:
+                pass
 
         if self.config.aimbot_enabled or self.config.magnet_enabled:
             cx, cy = w / 2, h / 2
