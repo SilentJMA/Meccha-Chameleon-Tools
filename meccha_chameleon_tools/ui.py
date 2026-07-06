@@ -1173,8 +1173,9 @@ class Overlay(QWidget):
         self._terrain_cache = None
         self._terrain_timer = QTimer(self)
         self._terrain_timer.timeout.connect(self._refresh_terrain)
-        self._terrain_timer.start(15000)
+        self._terrain_timer.start(30000)
         self.hv = HyperVisionEngine(config)
+        self._hv3d_started = False
         self._hv_timer = QTimer(self)
         self._hv_timer.timeout.connect(self._hv_scan_tick)
         self._hv_timer.start(500)
@@ -1232,10 +1233,9 @@ class Overlay(QWidget):
             pass
 
     def _hv_scan_tick(self):
-        if not self.esp:
+        if not self.esp or not self.config.hypervision_enabled:
             return
         try:
-            self.hv.check_bridge()
             cam = self.esp.get_camera()
             if not cam:
                 return
@@ -1244,28 +1244,26 @@ class Overlay(QWidget):
             if not players:
                 return
 
-            # Manage 3D in-engine rendering if bridge is alive
-            if self.hv.bridge_alive and self.config.hypervision_enabled:
+            # Check bridge (fast: uses 0.3s non-blocking ping)
+            bridge_ok = self.hv.check_bridge()
+
+            # 3D in-engine rendering (only when bridge alive)
+            if bridge_ok:
                 enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
                 if enemies:
                     t = enemies[0]
                     tp = t["pos"]; pp = cam["loc"]
                     q = {"low": 0, "medium": 1, "high": 2, "ultra": 2}.get(self.config.hv_quality, 1)
-                    if not hasattr(self, '_hv3d_started') or not self._hv3d_started:
+                    if not getattr(self, '_hv3d_started', False):
                         bridge_start_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2], q)
                         self._hv3d_started = True
                     else:
                         bridge_update_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2])
-                else:
-                    if getattr(self, '_hv3d_started', False):
-                        bridge_stop_hv()
-                        self._hv3d_started = False
-            elif not self.config.hypervision_enabled:
-                if getattr(self, '_hv3d_started', False):
+                elif getattr(self, '_hv3d_started', False):
                     bridge_stop_hv()
                     self._hv3d_started = False
 
-            # Also update 2D cache for overlay rendering
+            # 2D overlay cache
             self.hv.update_targets(players, cam["loc"])
         except Exception:
             pass
@@ -1365,6 +1363,8 @@ class Overlay(QWidget):
         if self.esp is None:
             painter.setPen(QPen(QColor(180, 180, 180)))
             painter.drawText(10, 20, _tr("Waiting for game..."))
+            painter.setPen(QPen(QColor(100, 100, 100)))
+            painter.drawText(10, 40, "Status: No Game Process")
             self._rendering = False
             return
 
