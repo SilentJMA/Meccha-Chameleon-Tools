@@ -75,23 +75,41 @@ def main():
         log.enable()
         log.info("Verbose logging enabled")
 
-    config = load_config()
-    if config.language == "EN" and not os.path.exists(CONFIG_FILE):
-        detected = detect_system_language()
-        if detected != "EN":
-            config.language = detected
-    _tr.set_language(config.language)
-
-    esp = None
     try:
-        esp = MecchaESP()
-    except Exception:
-        pass
+        log.info("Loading config...")
+        config = load_config()
+        log.info(f"Config loaded, language={config.language}")
 
-    menu = Menu(config, esp)
-    overlay = Overlay(esp, config)
-    overlay.show()
-    menu.show()
+        if config.language == "EN" and not os.path.exists(CONFIG_FILE):
+            detected = detect_system_language()
+            if detected != "EN":
+                config.language = detected
+                log.info(f"System language detected: {detected}")
+        _tr.set_language(config.language)
+
+        log.info("Connecting to game...")
+        esp = None
+        try:
+            esp = MecchaESP()
+            log.info("Game connected")
+        except Exception as e:
+            log.warn(f"Game not found (will auto-attach): {e}")
+
+        log.info("Creating Menu...")
+        menu = Menu(config, esp)
+        log.info("Creating Overlay...")
+        overlay = Overlay(esp, config)
+        log.info("Showing windows...")
+        overlay.show()
+        menu.show()
+        log.info("Entering event loop")
+    except Exception as e:
+        log.error(f"Startup failed: {e}")
+        import traceback
+        log.error(traceback.format_exc())
+        QMessageBox.critical(None, "Startup Error",
+                             f"Application failed to start:\n{e}")
+        sys.exit(1)
 
     ret = app.exec_()
     save_config(config)
