@@ -683,6 +683,16 @@ class Menu(QWidget):
         hdr3 = QLabel(_tr("APPEARANCE"))
         hdr3.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
         lo.addWidget(hdr3)
+        cr = QHBoxLayout()
+        cr.addWidget(QLabel(_tr("Color Mode:")))
+        self.cmb_color_mode = QComboBox()
+        cm_labels = {"team": "Team (enemy/ally)", "role": "Role (hunter/survivor)", "hybrid": "Hybrid (ring+alt)"}
+        self.cmb_color_mode.addItems(list(cm_labels.values()))
+        cm_codes = list(cm_labels.keys())
+        self.cmb_color_mode.setCurrentIndex(cm_codes.index(self.config.color_mode) if self.config.color_mode in cm_codes else 2)
+        self.cmb_color_mode.currentIndexChanged.connect(lambda idx: setattr(self.config, "color_mode", cm_codes[idx]))
+        cr.addWidget(self.cmb_color_mode)
+        lo.addLayout(cr)
         lr = QHBoxLayout()
         lr.addWidget(QLabel(_tr("Line Thickness:")))
         self.spn_line = QSpinBox()
@@ -1270,27 +1280,45 @@ class Overlay(QWidget):
             invincible = False
             if self.config.invincible_detect and not is_local:
                 invincible = self.esp.get_invincible(actor)
+
+            # Determine base color (team) and role color
             if is_local:
-                color = self.config.local_color
+                base_color = self.config.local_color
             elif invincible:
-                color = self.config.invincible_color
+                base_color = self.config.invincible_color
             elif is_unknown:
-                color = self.config.unknown_color
+                base_color = self.config.unknown_color
             elif is_enemy:
                 if self.config.enemy_only:
                     visible = self.esp._is_visible(actor)
-                    color = self.config.visible_color if visible else self.config.not_visible_color
+                    base_color = self.config.visible_color if visible else self.config.not_visible_color
                 else:
-                    color = self.config.enemy_color
+                    base_color = self.config.enemy_color
             else:
-                color = self.config.teammate_color
+                base_color = self.config.teammate_color
+
+            role_color = None
+            if is_hunter:
+                role_color = self.config.hunter_visual_color
+            elif is_survivor:
+                role_color = self.config.survivor_visual_color
+
+            cm = self.config.color_mode
+            if cm == "role" and role_color:
+                color = role_color
+            else:
+                color = base_color
 
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
 
             if self.config.dot_esp:
                 radius = int(self.config.dot_radius * scale)
-                self._draw_dot(painter, dsx, dsy, max(2, radius), color)
+                r = max(2, radius)
+                if cm == "hybrid" and role_color:
+                    self._draw_dot_outlined(painter, dsx, dsy, r, color, role_color)
+                else:
+                    self._draw_dot(painter, dsx, dsy, r, color)
 
             rot = self.esp.get_actor_root_rotation(actor) if actor else None
             hw = self.config.box_height_world / 3.0
@@ -1321,8 +1349,29 @@ class Overlay(QWidget):
                     draw_health_bar(painter, bar_x, bar_y, 24 * scale, 4, hp, sh if self.config.shield_bar else None)
 
             if self.config.snap_lines:
-                painter.setPen(QPen(QColor(*color), 1))
-                painter.drawLine(int(w / 2), int(h), int(sx), int(sy))
+                x0, y0 = int(w / 2), int(h)
+                x1, y1 = int(sx), int(sy)
+                dx_, dy_ = x1 - x0, y1 - y0
+                dist_ = int(math.sqrt(dx_*dx_ + dy_*dy_))
+                if dist_ > 0:
+                    if cm == "hybrid" and role_color:
+                        seg_len = 8
+                        alt_qcolor = QColor(*role_color)
+                        theme = QColor(*color)
+                        for t in range(0, dist_, seg_len):
+                            t2 = min(t + seg_len, dist_)
+                            ratio1 = t / dist_
+                            ratio2 = t2 / dist_
+                            px1 = int(x0 + dx_ * ratio1)
+                            py1 = int(y0 + dy_ * ratio1)
+                            px2 = int(x0 + dx_ * ratio2)
+                            py2 = int(y0 + dy_ * ratio2)
+                            alt = (t // seg_len) % 2
+                            painter.setPen(QPen(alt_qcolor if alt else theme, 1))
+                            painter.drawLine(px1, py1, px2, py2)
+                    else:
+                        painter.setPen(QPen(QColor(*color), 1))
+                        painter.drawLine(x0, y0, x1, y1)
 
             label_parts = []
             if self.config.show_names:
@@ -1428,6 +1477,11 @@ class Overlay(QWidget):
     def _draw_dot(self, painter, cx, cy, r, color):
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(*color))
+        painter.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
+
+    def _draw_dot_outlined(self, painter, cx, cy, r, fill, outline):
+        painter.setPen(QPen(QColor(*outline), max(1, r // 3)))
+        painter.setBrush(QColor(*fill))
         painter.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
 
     # -----------------------------------------------------------------------

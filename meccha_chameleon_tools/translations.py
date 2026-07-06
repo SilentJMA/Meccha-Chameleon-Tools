@@ -157,6 +157,7 @@ _TR = {
     "OK": {"CN": "\u786e\u5b9a"},
     "Waiting for game...": {"CN": "\u7b49\u5f85\u6e38\u620f\u542f\u52a8..."},
     "Teammate {idx}": {"CN": "\u961f\u53cb {idx}"},
+    "Color Mode:": {"CN": "\u989c\u8272\u6a21\u5f0f:"},
 }
 
 

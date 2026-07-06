@@ -14,6 +14,9 @@ class Config:
     # Language (EN, DE, FR, ES, CN, JP, KR)
     language: str = "EN"
 
+    # Color mode: "team" | "role" | "hybrid"
+    color_mode: str = "hybrid"
+
     # ESP basics
     enabled: bool = True
     dot_esp: bool = True
