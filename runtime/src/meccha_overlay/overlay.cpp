@@ -385,9 +385,11 @@ static void read_game_data() {
 // =========================== World to Screen ====================
 static bool w2s(const double pos[3], const CameraData& cam, UINT sw, UINT sh, float& sx, float& sy) {
     if (!cam.valid || cam.fov <= 0) return false;
-    float p = (float)(cam.rot[0]*PI/180), y = (float)(cam.rot[1]*PI/180);
-    float sp=sinf(p), cp=cosf(p), sy_=sinf(y), cy_=cosf(y);
-    double fwd[3]={cp*cy_, cp*sy_, sp}, rgt[3]={-sy_, cy_, 0}, up[3]={-sp*cy_, -sp*sy_, cp};
+    float p = (float)(cam.rot[0]*PI/180), y = (float)(cam.rot[1]*PI/180), r = (float)(cam.rot[2]*PI/180);
+    float sp=sinf(p), cp=cosf(p), sy_=sinf(y), cy_=cosf(y), sr=sinf(r), cr=cosf(r);
+    double fwd[3]={cp*cy_, cp*sy_, sp};
+    double rgt[3]={sr*sp*cy_-cr*sy_, sr*sp*sy_+cr*cy_, -sr*cp};
+    double up[3]={-(cr*sp*cy_+sr*sy_), cy_*sr-cr*sp*sy_, cr*cp};
     double dx=pos[0]-cam.loc[0], dy=pos[1]-cam.loc[1], dz=pos[2]-cam.loc[2];
     double vx=dx*fwd[0]+dy*fwd[1]+dz*fwd[2];
     double vy=dx*rgt[0]+dy*rgt[1]+dz*rgt[2];
@@ -495,110 +497,133 @@ static void ren_skel(float sx, float sy, float d, const PlayerData& p) {
     dl(sx, py, sx-lw, py+h*0.5f, col, lt);
     dl(sx, py, sx+lw, py+h*0.5f, col, lt);
 }
-static void ren_snap(float sx, float sy, UINT sh, const PlayerData& p) {
+static void ren_snap(float sx, float sy, UINT sw, UINT sh, const PlayerData& p) {
     auto team = team_col(p), role = role_col(p);
     bool hybrid = g_cfg.color_mode == "hybrid" && (p.is_hunter || p.is_survivor);
     float lt = (float)g_cfg.line_thickness;
+    float x0 = sw/2.0f, y0 = (float)sh;
+    float x1 = sx, y1 = sy;
+    float dx = x1-x0, dy = y1-y0;
+    float total = sqrtf(dx*dx+dy*dy);
+    if (total < 1) return;
     if (hybrid) {
-        // Alternating segments: team/role
-        float x0 = sx, y0 = (float)sh, x1 = sx, y1 = sy;
-        float seg_len = 8.0f, total = y0 - y1;
-        if (total > 0) {
-            int n_seg = (int)(total/seg_len);
-            for (int i = 0; i < n_seg; i++) {
-                float yy0 = y1 + i*seg_len, yy1 = std::min(yy0+seg_len, y0);
-                dl(x0, yy0, x0, yy1, (i%2) ? role : team, lt);
-            }
+        float seg_len = 8.0f;
+        int n_seg = (int)(total/seg_len);
+        for (int i = 0; i < n_seg; i++) {
+            float t0 = i*seg_len/total, t1 = std::min((i+1)*seg_len,total)/total;
+            dl(x0+dx*t0, y0+dy*t0, x0+dx*t1, y0+dy*t1, (i%2)?role:team, lt);
         }
     } else {
-        dl(sx, sy, sx, (float)sh, team, lt);
+        dl(x0, y0, x1, y1, team, lt);
     }
 }
-static void ren_hbar(float sx, float y, float d, const PlayerData& p) {
-    float s = scl(d);
-    float w = 30*s, h = 4*s, x = sx - w/2;
-    bar(x, y, w, h, p.health/100.0f, to_c(g_cfg.visible_color));
-    if (g_cfg.shield_bar && p.shield > 0)
-        bar(x, y-h-1, w, h, p.shield/100.0f, {0.2f,0.4f,0.9f,1});
+static D2D1_COLOR_F health_grad(float pct) {
+    if (pct > 0.5f) return { (1-pct)*2, 1, 0, 1 }; // yellow→green
+    return { 1, pct*2, 0, 1 }; // red→yellow
 }
-static void ren_info(float sx, float y, const PlayerData& p) {
+static void ren_hbar(float sx, float sy, float d, const PlayerData& p) {
+    float s = scl(d);
+    float w = 24*s, h = 4*s, x = sx - w/2;
+    float y = sy - 20*s; // Above player
+    bar(x, y, w, h, p.health/100.0f, health_grad(p.health/100.0f));
+    if (g_cfg.shield_bar && p.shield > 0) {
+        float sh = (float)(p.shield / 100.0);
+        bar(x, y-h-2, w, h, std::min(1.0f,sh), {0,0.47f,1,0.86f});
+    }
+}
+static void ren_info(float sx, float sy, float d, const PlayerData& p) {
     wchar_t buf[256];
-    float ox = sx - 60;
+    float r = std::max(2.0f, g_cfg.dot_radius * scl(d));
+    float ox = sx + r + 4;
+    float y = sy;
     std::vector<D2D1_COLOR_F> cols;
     std::vector<std::wstring> parts;
 
     if (g_cfg.show_names) {
-        wchar_t wname[64]; MultiByteToWideChar(CP_UTF8,0,p.name,-1,wname,64);
-        if (g_cfg.show_distance)
-            swprintf_s(buf, L"%s [%.0fm]", wname, p.dist/100);
-        else
-            wcscpy_s(buf, wname);
-        parts.push_back(buf);
+        if (p.is_local) {
+            parts.push_back(L"YOU");
+        } else if (p.is_enemy) {
+            int idx = 0; for (auto& op : g_players) { if (&op == &p) break; if (!op.is_local && op.is_enemy) idx++; }
+            swprintf_s(buf, L"Enemy %d", idx+1);
+            parts.push_back(buf);
+        } else {
+            parts.push_back(L"Teammate");
+        }
         cols.push_back(role_col(p));
     }
     if (g_cfg.show_roles && (p.is_hunter||p.is_survivor)) {
-        parts.push_back(p.is_hunter ? L"\U0001F3A9 Hunter" : L"\U0001F46B Survivor");
+        parts.push_back(p.is_hunter ? L"Hunter" : L"Survivor");
         cols.push_back(role_col(p));
     }
     if (p.invincible) {
         parts.push_back(L"[INV]");
         cols.push_back(to_c(g_cfg.invincible_color));
     }
+    if (g_cfg.show_distance && !p.is_local) {
+        swprintf_s(buf, L"%dm", (int)(p.dist/100));
+        parts.push_back(buf);
+        cols.push_back(cols.empty()?role_col(p):cols.back());
+    }
+    if (parts.empty()) return;
 
-    // Render with hybrid color support (role label gets role color)
     float cx = ox;
     bool hybrid = g_cfg.color_mode=="hybrid";
     for (size_t i = 0; i < parts.size(); i++) {
-        auto c = (hybrid && i == 0) ? team_col(p) : cols[i];
+        bool is_role = (g_cfg.show_roles && i == (size_t)(g_cfg.show_names?1:0));
+        auto c = (hybrid && is_role) ? role_col(p) : (i==0?team_col(p):cols[i]);
         auto& s = parts[i];
         g_brush->SetColor(c);
         g_rt->DrawText(s.c_str(), (UINT32)s.size(), g_font_small, D2D1::RectF(cx,y,cx+300,y+20), g_brush);
-        // Approximate text width
-        cx += (float)s.size() * 8.0f;
+        cx += (float)s.size() * 7.5f + 4;
+        // Write separator
+        if (i+1 < parts.size()) {
+            g_brush->SetColor({0.5f,0.5f,0.5f,0.5f});
+            g_rt->DrawText(L"|", 1, g_font_small, D2D1::RectF(cx-4,y,cx+10,y+20), g_brush);
+        }
     }
 }
 
 // =========================== Render - Radar =====================
 static void ren_radar(UINT sw, UINT sh) {
     if (!g_cfg.radar_enabled) return;
-    int rs = g_cfg.radar_size, rx = 10, ry = (int)sh - rs - 10;
+    int rs = g_cfg.radar_size, rx = sw - rs - 20, ry = 20;
     float cx = (float)(rx + rs/2), cy = (float)(ry + rs/2);
-    float range = std::max(g_cfg.radar_range, 1000.0f), scale = (rs/2.0f)/range;
+    float range = std::max(g_cfg.radar_range, 1000.0f), half_rs = rs/2.0f;
+    float scale = (half_rs - 8.0f) / range;
+    float cyaw = cosf(g_cam.rot[1]*PI/180), syaw = sinf(g_cam.rot[1]*PI/180);
 
-    g_brush->SetColor({0.05f,0.05f,0.08f, g_cfg.radar_opacity/255.0f});
-    g_rt->FillEllipse({cx,cy,(float)rs/2,(float)rs/2}, g_brush);
-    dc(cx, cy, rs/2, {0.3f,0.3f,0.4f,1}, 1);
+    // Background + border
+    g_brush->SetColor({0,0,0, g_cfg.radar_opacity/255.0f});
+    g_rt->FillEllipse({cx,cy,half_rs,half_rs}, g_brush);
+    dc(cx, cy, half_rs, {0.3f,0.3f,0.4f,1}, 1);
 
-    // Terrain (if available)
-    if (g_cfg.background_geo) {
-        // Simple grid dots as placeholder terrain
-        for (int gx = -5; gx <= 5; gx++) {
-            for (int gy = -5; gy <= 5; gy++) {
-                float wx = (float)g_cam.loc[0] + gx * range/5;
-                float wy = (float)g_cam.loc[1] + gy * range/5;
-                float dx = (wy - (float)g_cam.loc[1]) * scale;
-                float dy = -(wx - (float)g_cam.loc[0]) * scale;
-                if (fabsf(dx) < rs/2 && fabsf(dy) < rs/2)
-                    fc(cx+dx, cy+dy, 0.5f, {0.3f,0.3f,0.4f,0.4f});
-            }
-        }
-    }
+    // Crosshair lines
+    dl(cx-half_rs, cy, cx+half_rs, cy, {0.3f,0.3f,0.4f,0.5f}, 1);
+    dl(cx, cy-half_rs, cx, cy+half_rs, {0.3f,0.3f,0.4f,0.5f}, 1);
 
+    // Center dot (local) - always visible
+    fc(cx, cy, 2.5f, to_c(g_cfg.local_color));
+
+    // Player dots (camera-relative rotation)
     for (auto& p : g_players) {
-        float dx = (float)(p.pos[1] - g_cam.loc[1]) * scale;
-        float dy = -(float)(p.pos[0] - g_cam.loc[0]) * scale;
-        if (fabsf(dx) > rs/2 || fabsf(dy) > rs/2) continue;
-        fc(cx+dx, cy+dy, p.is_local?3:2.5f, team_col(p));
+        if (p.is_local) continue;
+        float dx = (float)(p.pos[0] - g_cam.loc[0]);
+        float dz = (float)(p.pos[2] - g_cam.loc[2]);
+        // Rotate by camera yaw so heading is "up"
+        float rx = (dx * cyaw - dz * syaw) * scale;
+        float ry_ = (dx * syaw + dz * cyaw) * scale;
+        if (fabsf(rx) > half_rs-4 || fabsf(ry_) > half_rs-4) continue;
+        fc(cx+rx, cy-ry_, 2.5f, team_col(p));
     }
-    dc(cx, cy, rs/2, to_c(g_cfg.radar_color), 1);
+
+    dc(cx, cy, half_rs, to_c(g_cfg.radar_color), 1);
 }
 
 // =========================== Render - Aimbot Assist =============
 static void ren_aimbot_fov(UINT sw, UINT sh) {
     if (!g_cfg.aimbot_enabled || !g_cfg.aimbot_show_fov) return;
-    float r = g_cfg.aimbot_fov * (float)sh / 90.0f;
-    r = std::min(r, (float)std::max(sw, sh));
-    dc((float)sw/2, (float)sh/2, r, {0,1,0,0.3f}, 1);
+    float r = (float)g_cfg.aimbot_fov;
+    dc((float)sw/2, (float)sh/2, r, {1,1,1,1}, 1);
 }
 
 // =========================== Render - HyperVision ===============
@@ -687,13 +712,13 @@ static void render_frame() {
 
             float sx=p.sx, sy=p.sy;
 
-            if (!p.is_local && g_cfg.snap_lines) ren_snap(sx, sy, sh, p);
+            if (!p.is_local && g_cfg.snap_lines) ren_snap(sx, sy, sw, sh, p);
             if (g_cfg.dot_esp)    ren_dot(sx, sy, p.dist, p);
             if (g_cfg.box_esp)    ren_box(sx, sy, p.dist, p);
             if (g_cfg.corner_box) ren_corner_box(sx, sy, p.dist, p);
             if (g_cfg.skeleton_esp) ren_skel(sx, sy, p.dist, p);
             if (g_cfg.health_bar) ren_hbar(sx, sy+5, p.dist, p);
-            if (g_cfg.show_names || g_cfg.show_roles) ren_info(sx, sy+10, p);
+            if (g_cfg.show_names || g_cfg.show_roles) ren_info(sx, sy+10, p.dist, p);
         }
 
         // HyperVision
@@ -712,12 +737,14 @@ static void render_frame() {
         wchar_t st[256];
         int non_local = 0;
         for (auto& p : g_players) if (!p.is_local) non_local++;
-        swprintf_s(st, L"Players: %d | FOV: %.0f", non_local, g_cam.fov);
-        txt_s(st, 10, 10, {0.6f,0.6f,0.6f,1});
+        swprintf_s(st, L"Players: %d | Attached", non_local);
+        txt_s(st, 10, 20, {1,1,1,1});
     }
 
     // Watermark
-    txt_sm(L"Meccha Chameleon Tools", (float)sw-150, (float)sh-15, {0.3f,0.3f,0.3f,0.5f});
+    g_brush->SetColor({1,1,1,0.16f});
+    g_rt->DrawText(L"Meccha Chameleon Tools", 22, g_font_small,
+        D2D1::RectF((float)sw-165,(float)sh-13,(float)sw,(float)sh), g_brush);
 
     g_rt->EndDraw();
 }
