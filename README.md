@@ -138,18 +138,24 @@ Camouflage     → loader-based bridge injection (port 50262) for mesh painting
 
 ## Changelog
 
-### v1.9.0-beta — Current Release
+### v1.9.1-wow — Fusion Release (wzs12222)
+- **HyperVision system** — 3D exposure volume mapping & visibility-driven navigation via bridge DLL
+- **Three color modes** — Team (enemy/ally), Role (hunter/survivor), Hybrid (both via outlined dots + alternating snap lines)
+- **Background reader thread** — 10 reads/sec, eliminates render stutter
+- **Auto-attach** — tool starts without game, attaches every 2s
+- **Observer mode** — camera proximity detection for spectate targets
+- **Filter Config dialog** — hide Enemy/Self/Teammate/Unknown by category
+- **Configurable ESP FPS** — 10-60 slider in ESP tab
+- **System language detection** — auto-detect on first launch
+- **Logger module** — file + verbose console logging via `--verbose`
+- Camouflage tab, loader-based injection, Review/Unreview from v1.9.0-beta
+- Retains all v1.9.0-beta features (7 languages, magnet, player mod, draw all, per-role toggles)
+
+### v1.9.0-beta — Upstream Release
 - Camouflage tab reworked with lighter bridge system (loader-based injection, port 50262)
 - Simplified camouflage UI (Start/Stop/Review/Unreview)
 - Native files restructured into `native/` subdirectory
 - Removed dependency on external controller EXE — Python handles injection directly
-
-### v1.8.1-beta
-- Camouflage tab added (disabled by default — in development)
-- Multi-language support (7 languages)
-- Coherent dark theme with styled combo box popup, sliders, scrollbars
-- Language switch fix — outer layout kept permanent to prevent blank window on rebuild
-- Cleaned up color picker remnants, old camouflage code
 
 ### v1.8.0 — Role detection, enemy filter, corner box
 - Role detection (Hunter/Survivor), enemy-only filter, Show Roles toggle

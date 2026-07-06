@@ -95,3 +95,7 @@ patch_remaining.py
 
 # Demo media (too large for repo)
 demo.mp4
+
+# Untracked native binaries (use native/ dir instead)
+meccha_chameleon_tools/runtime-bridge.dll
+meccha_chameleon_tools/runtime-injector.exe
