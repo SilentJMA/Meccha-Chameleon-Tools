@@ -24,8 +24,9 @@ from meccha_chameleon_tools.core import (
 from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
 from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, stop_paint, is_bridge_alive
-from meccha_chameleon_tools.hypervision import (HyperVisionEngine, world_to_radar, simplify_segments,
-                                                  bridge_start_hv, bridge_update_hv, bridge_stop_hv)
+from meccha_chameleon_tools.hypervision import (ping_fast, bg_scan_terrain, bg_visibility_scan,
+                                                  bg_path_find, bg_start_hv, bg_update_hv, bg_stop_hv,
+                                                  simplify_segments)
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ def rotation_to_axes(rot):
 
 
 def w2s(world_pos, camera, screen_w, screen_h):
-    """Project world pos to screen. Returns None only if behind camera."""
+    """Project world pos to screen. Returns None if behind or outside frustum."""
     cam_loc = camera["loc"]
     cam_rot = camera["rot"]
     fov = camera["fov"]
@@ -60,6 +61,8 @@ def w2s(world_pos, camera, screen_w, screen_h):
     tan_hfov = math.tan(math.radians(fov) / 2.0)
     ndc_x = view_y / (view_x * tan_hfov)
     ndc_y = view_z / (view_x * tan_hfov / aspect)
+    if abs(ndc_x) > 1.5 or abs(ndc_y) > 1.5:
+        return None
     screen_x = (1.0 + ndc_x) * screen_w / 2.0
     screen_y = (1.0 - ndc_y) * screen_h / 2.0
     return (screen_x, screen_y)
@@ -1170,15 +1173,26 @@ class Overlay(QWidget):
         self._reader_running = True
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
+        # Terrain cache
         self._terrain_cache = None
-        self._terrain_timer = QTimer(self)
-        self._terrain_timer.timeout.connect(self._refresh_terrain)
-        self._terrain_timer.start(30000)
-        self.hv = HyperVisionEngine(config)
+        self._last_terrain_time = 0.0
+
+        # HV state (thread-safe, updated via callbacks)
+        self._hv_exposure_cloud = []      # List of [x,y,z]
+        self._hv_paths = []               # List of List[[x,y,z]]
+        self._hv_bridge_ok = False
         self._hv3d_started = False
+        self._hv_target_idx = 0
+
+        # HV timer (does NOT block — all TCP in bg threads)
         self._hv_timer = QTimer(self)
-        self._hv_timer.timeout.connect(self._hv_scan_tick)
+        self._hv_timer.timeout.connect(self._hv_tick)
         self._hv_timer.start(500)
+
+        # Terrain refresh timer
+        self._terrain_timer = QTimer(self)
+        self._terrain_timer.timeout.connect(self._tick_terrain)
+        self._terrain_timer.start(30000)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick_overlay)
@@ -1215,24 +1229,24 @@ class Overlay(QWidget):
         except Exception:
             self.setGeometry(0, 0, 1920, 1080)
 
-    def _refresh_terrain(self):
+    def _tick_terrain(self):
+        """Refresh terrain from Python fallback or bridge, runs in timer."""
         if not self.esp or not self.config.radar_terrain:
             return
+        now = time.time()
+        if now - self._last_terrain_time < 30:
+            return
+        self._last_terrain_time = now
         try:
-            self.hv.check_bridge()
-            cam = self.esp.get_camera()
-            if cam:
-                segs = self.hv.refresh_terrain(cam["loc"], force=False)
-                if not segs and self.hv.bridge_alive:
-                    pass
-                elif not segs:
-                    segs = self.esp.scan_terrain()
-                if segs:
-                    self._terrain_cache = simplify_segments(segs)
+            # Python fallback (always available)
+            segs = self.esp.scan_terrain()
+            if segs:
+                self._terrain_cache = simplify_segments(segs)
         except Exception:
             pass
 
-    def _hv_scan_tick(self):
+    def _hv_tick(self):
+        """Non-blocking HV tick — all TCP is fire-and-forget."""
         if not self.esp or not self.config.hypervision_enabled:
             return
         try:
@@ -1244,27 +1258,44 @@ class Overlay(QWidget):
             if not players:
                 return
 
-            # Check bridge (fast: uses 0.3s non-blocking ping)
-            bridge_ok = self.hv.check_bridge()
+            # Cache bridge status
+            self._hv_bridge_ok = ping_fast()
 
-            # 3D in-engine rendering (only when bridge alive)
-            if bridge_ok:
-                enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
-                if enemies:
-                    t = enemies[0]
-                    tp = t["pos"]; pp = cam["loc"]
-                    q = {"low": 0, "medium": 1, "high": 2, "ultra": 2}.get(self.config.hv_quality, 1)
-                    if not getattr(self, '_hv3d_started', False):
-                        bridge_start_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2], q)
-                        self._hv3d_started = True
-                    else:
-                        bridge_update_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2])
-                elif getattr(self, '_hv3d_started', False):
-                    bridge_stop_hv()
+            enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
+            if not enemies:
+                if self._hv3d_started:
+                    bg_stop_hv()
                     self._hv3d_started = False
+                return
 
-            # 2D overlay cache
-            self.hv.update_targets(players, cam["loc"])
+            # Round-robin one target per tick
+            self._hv_target_idx = (self._hv_target_idx + 1) % len(enemies)
+            tgt = enemies[self._hv_target_idx]
+            tp, pp = tgt["pos"], cam["loc"]
+
+            # 3D in-engine (bridge required)
+            if self._hv_bridge_ok:
+                q = {"low": 0, "medium": 1, "high": 2, "ultra": 2}.get(self.config.hv_quality, 1)
+                if not self._hv3d_started:
+                    bg_start_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2], q)
+                    self._hv3d_started = True
+                else:
+                    bg_update_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2])
+
+            # 2D overlay: fire visibility scan + path find in bg thread
+            q_step = {"low": 120, "medium": 80, "high": 50, "ultra": 35}.get(self.config.hv_quality, 80)
+            q_zl = {"low": 10, "medium": 15, "high": 20, "ultra": 25}.get(self.config.hv_quality, 15)
+
+            def _on_cloud(cloud):
+                self._hv_exposure_cloud = cloud
+                if cloud:
+                    bg_path_find(pp[0], pp[1], pp[2],
+                                 tp[0], tp[1], tp[2], cloud,
+                                 lambda paths: setattr(self, '_hv_paths', paths))
+
+            bg_visibility_scan(tp[0], tp[1], tp[2],
+                               step=q_step, z_layers=q_zl, radius=1500,
+                               cb=_on_cloud)
         except Exception:
             pass
 
@@ -1585,41 +1616,36 @@ class Overlay(QWidget):
                 painter.drawText(w - 200, 60, _tr("Items: {count}", count=actor_count))
 
         non_local = [p for p in all_players if not p["is_local"]]
-        status_parts = []
-        status_parts.append(_tr("Players: {count}", count=len(non_local)))
-        if self.esp:
-            status_parts.append("Attached")
-        else:
-            status_parts.append("Waiting...")
-        if self.hv.bridge_alive:
-            status_parts.append("HV:ON")
+        status = f"Players: {len(non_local)} | {'Attached' if self.esp else 'Waiting...'}"
+        if self._hv_bridge_ok:
+            status += " | HV:ON"
         painter.setPen(QPen(QColor(255, 255, 255)))
-        painter.drawText(10, 20, " | ".join(status_parts))
+        painter.drawText(10, 20, status)
 
-        # HyperVision overlay: exposure cloud + nav paths
+        # HyperVision overlay (using cached cloud/paths from bg thread)
         if self.config.hypervision_enabled and cam:
             try:
-                hv_paths, hv_dots = self.hv.get_render_data(cam, w, h)
-                # Exposure dots (semi-transparent green circles)
-                for dx, dy, _ in hv_dots:
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QColor(0, 255, 100, 60))
-                    painter.drawEllipse(dx - 6, dy - 6, 12, 12)
-                    painter.setBrush(QColor(0, 255, 100, 30))
-                    painter.drawEllipse(dx - 10, dy - 10, 20, 20)
-                # Nav paths (dashed green lines)
-                for pts in hv_paths:
-                    for i in range(len(pts) - 1):
-                        sx1, sy1, _ = pts[i]
-                        sx2, sy2, _ = pts[i + 1]
-                        painter.setPen(QPen(QColor(0, 255, 50, 180), 2))
-                        painter.drawLine(sx1, sy1, sx2, sy2)
-                    # Path end marker
-                    if pts:
-                        ex_, ey_, _ = pts[-1]
+                for pt in self._hv_exposure_cloud:
+                    s = w2s(tuple(pt), cam, w, h)
+                    if s:
+                        dx, dy = int(s[0]), int(s[1])
+                        painter.setPen(Qt.NoPen)
+                        painter.setBrush(QColor(0, 255, 100, 50))
+                        painter.drawEllipse(dx - 5, dy - 5, 10, 10)
+                for path in self._hv_paths:
+                    pts_s = []
+                    for wp in path:
+                        s = w2s(tuple(wp), cam, w, h)
+                        if s:
+                            pts_s.append((int(s[0]), int(s[1])))
+                    for i in range(len(pts_s) - 1):
+                        painter.setPen(QPen(QColor(0, 255, 50, 160), 2))
+                        painter.drawLine(pts_s[i][0], pts_s[i][1], pts_s[i+1][0], pts_s[i+1][1])
+                    if pts_s:
                         painter.setPen(QPen(QColor(0, 255, 50), 3))
                         painter.setBrush(QColor(0, 255, 50, 180))
-                        painter.drawEllipse(ex_ - 4, ey_ - 4, 8, 8)
+                        ex, ey = pts_s[-1]
+                        painter.drawEllipse(ex - 3, ey - 3, 6, 6)
             except Exception:
                 pass
 
