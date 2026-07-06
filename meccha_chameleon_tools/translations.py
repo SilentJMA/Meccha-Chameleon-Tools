@@ -180,6 +180,7 @@ _TR = {
     "Medium": {"DE": "Mittel", "FR": "Moyen", "ES": "Medio", "CN": "\u4e2d", "JP": "\u4e2d", "KR": "\uc911\uac04"},
     "High": {"DE": "Hoch", "FR": "\u00c9lev\u00e9", "ES": "Alto", "CN": "\u9ad8", "JP": "\u9ad8\u3044", "KR": "\ub192\uc74c"},
     "Ultra": {"DE": "Ultra", "FR": "Ultra", "ES": "Ultra", "CN": "\u6781\u81f4", "JP": "\u30a6\u30eb\u30c8\u30e9", "KR": "\uc6b8\ud2b8\ub77c"},
+    "Test Sphere (virtual enemy)": {"CN": "\u6d4b\u8bd5\u7403\u4f53\uff08\u865a\u62df\u654c\u4eba\uff09"},
 }
 
 

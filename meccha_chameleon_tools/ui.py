@@ -725,13 +725,20 @@ class Menu(QWidget):
         lo.addStretch()
 
     def _build_visual_tab(self):
+        from PyQt5.QtWidgets import QScrollArea
         p = self._pages["VISUAL"]
-        lo = QVBoxLayout(p)
+        outer = QVBoxLayout(p)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        content = QWidget()
+        lo = QVBoxLayout(content)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(4)
-        hdr = QLabel(_tr("PER-ROLE VISUALS"))
-        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr)
+        outer.addWidget(scroll)
+        scroll.setWidget(content)
         self.cb_hunter = self._chk(_tr("Hunter ESP"), "hunter_esp")
         self.cb_survivor = self._chk(_tr("Survivor ESP"), "survivor_esp")
         lo.addWidget(self.cb_hunter)
@@ -817,6 +824,8 @@ class Menu(QWidget):
         self.cmb_hv_q.currentIndexChanged.connect(lambda idx: setattr(self.config, "hv_quality", hv_q_codes[idx]))
         qr.addWidget(self.cmb_hv_q)
         lo.addLayout(qr)
+        self.cb_test = self._chk(_tr("Test Sphere (virtual enemy)"), "hv_test_sphere")
+        lo.addWidget(self.cb_test)
         lo.addStretch()
 
     def _build_radar_tab(self):
@@ -1289,6 +1298,12 @@ class Overlay(QWidget):
                     bg_ensure_bridge()
 
             enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
+
+            # Test sphere: virtual enemy for debugging without actual game enemy
+            if self.config.hv_test_sphere:
+                test_pos = (self.config.hv_test_x, self.config.hv_test_y, self.config.hv_test_z)
+                enemies = [{"pos": test_pos, "idx": 999}]
+
             if not enemies:
                 if self._hv3d_started:
                     bg_stop_hv()

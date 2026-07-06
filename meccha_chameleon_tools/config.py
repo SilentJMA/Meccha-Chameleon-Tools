@@ -125,6 +125,10 @@ class Config:
 
     # HyperVision
     hypervision_enabled: bool = False
+    hv_test_sphere: bool = False
+    hv_test_x: float = 500.0
+    hv_test_y: float = 0.0
+    hv_test_z: float = 0.0
     hv_mode: str = "auto"
     hv_path_count: int = 3
     hv_show_paths: bool = True
