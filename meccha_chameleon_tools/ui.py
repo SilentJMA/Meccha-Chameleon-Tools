@@ -1024,8 +1024,8 @@ class Menu(QWidget):
         for text, color, cmd in [
             ("Start Painting", "#4fd16a", self._on_paint_now),
             ("Stop Painting", "#e74c3c", self._on_stop_camo),
-            ("Review", "#3498db", self._on_preview),
-            ("Unreview", "#f39c12", self._on_unpreview),
+            (_tr("Review"), "#3498db", self._on_preview),
+            (_tr("Unreview"), "#f39c12", self._on_unpreview),
         ]:
             btn = QPushButton(text)
             btn.setStyleSheet(f"QPushButton {{ background-color: #1a1a1a; color: {color}; border: 1px solid #333; padding: 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }} QPushButton:hover {{ background-color: #2a2a2a; }}")

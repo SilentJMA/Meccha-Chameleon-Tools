@@ -110,7 +110,30 @@ finally {
     Pop-Location
 }
 
+# ── Meccha Core DLL (memory engine) ──
+$CoreSource = Join-Path $RuntimeRoot "src\meccha_core\meccha_core.cpp"
+$CoreOutput = Join-Path $OutDir "meccha-core.dll"
+Invoke-VsToolCommand -ToolName "cl.exe" -ToolArgs @(
+    "/nologo", "/std:c++17", "/EHsc", "/O2", "/LD", $CoreSource,
+    "/Fo:$(Join-Path $ObjDir 'meccha_core\meccha_core.obj')",
+    "/Fe:$CoreOutput",
+    "Kernel32.lib", "Psapi.lib"
+)
+
+# ── Meccha Overlay EXE (Direct2D GPU overlay) ──
+$OverlaySource = Join-Path $RuntimeRoot "src\meccha_overlay\overlay.cpp"
+$OverlayOutput = Join-Path $OutDir "meccha-overlay.exe"
+Invoke-VsToolCommand -ToolName "cl.exe" -ToolArgs @(
+    "/nologo", "/std:c++17", "/EHsc", "/O2", $OverlaySource,
+    "$CoreOutput.lib",
+    "/Fo:$(Join-Path $ObjDir 'meccha_overlay\overlay.obj')",
+    "/Fe:$OverlayOutput",
+    "d2d1.lib", "dwrite.lib", "ole32.lib", "User32.lib", "Gdi32.lib"
+)
+
 Write-Host "Built runtime artifacts:"
 Write-Host "  $(Join-Path $OutDir "$ExeName.exe")"
 Write-Host "  $(Join-Path $OutDir 'runtime-bridge.dll')"
 Write-Host "  $(Join-Path $OutDir 'runtime-injector.exe')"
+Write-Host "  $(Join-Path $OutDir 'meccha-core.dll')"
+Write-Host "  $(Join-Path $OutDir 'meccha-overlay.exe')"
