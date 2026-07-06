@@ -795,7 +795,7 @@ class MecchaESP:
         if not cam_pos or (cam_pos[0] == 0 and cam_pos[1] == 0 and cam_pos[2] == 0):
             return None
         best_idx = None
-        best_dist = 800.0
+        best_dist = 999999.0
         for i, (pawn, ps, pos) in enumerate(players_list):
             if not pos:
                 continue
@@ -835,13 +835,19 @@ class MecchaESP:
             pos = self.get_actor_root_pos(pawn)
             if pos is None:
                 continue
+            # Skip dead players (health <= 0)
+            health, _ = self.get_health(pawn, ps) or (None, None)
+            if health is not None and health <= 0:
+                continue
             raw_players.append((pawn, ps, pos))
         ref_is_hunter, ref_is_survivor = False, False
         is_spectating = False
         if local_pawn:
             _, ref_is_hunter, ref_is_survivor = self._detect_role(local_pawn)
-        elif cam_pos and raw_players:
-            spec_idx = self._find_spectate_target(cam_pos, raw_players)
+        elif raw_players:
+            spec_idx = self._find_spectate_target(cam_pos, raw_players) if cam_pos else 0
+            if spec_idx is None and raw_players:
+                spec_idx = 0  # fallback: first player
             if spec_idx is not None:
                 spec_pawn = raw_players[spec_idx][0]
                 _, ref_is_hunter, ref_is_survivor = self._detect_role(spec_pawn)
