@@ -128,6 +128,7 @@ class Config:
     hv_mode: str = "auto"
     hv_path_count: int = 3
     hv_show_paths: bool = True
+    hv_show_3d: bool = True
     hv_show_exposure: bool = True
     hv_quality: str = "high"
 
