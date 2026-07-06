@@ -786,6 +786,18 @@ class Menu(QWidget):
         lo.addWidget(self.cb_hv_exposure)
         self.cb_terrain = self._chk(_tr("Radar Terrain"), "radar_terrain")
         lo.addWidget(self.cb_terrain)
+        self.cb_hv_paths_3d = self._chk(_tr("Show 3D Nav Lines"), "hv_show_paths")
+        lo.addWidget(self.cb_hv_paths_3d)
+        qr = QHBoxLayout()
+        qr.addWidget(QLabel(_tr("Scan Quality:")))
+        self.cmb_hv_q = QComboBox()
+        hv_q_labels = {"low": _tr("Low"), "medium": _tr("Medium"), "high": _tr("High"), "ultra": _tr("Ultra")}
+        hv_q_codes = list(hv_q_labels.keys())
+        self.cmb_hv_q.addItems(list(hv_q_labels.values()))
+        self.cmb_hv_q.setCurrentIndex(hv_q_codes.index(self.config.hv_quality) if self.config.hv_quality in hv_q_codes else 1)
+        self.cmb_hv_q.currentIndexChanged.connect(lambda idx: setattr(self.config, "hv_quality", hv_q_codes[idx]))
+        qr.addWidget(self.cmb_hv_q)
+        lo.addLayout(qr)
         lo.addStretch()
 
     def _build_radar_tab(self):
@@ -1573,8 +1585,16 @@ class Overlay(QWidget):
                 painter.drawText(w - 200, 60, _tr("Items: {count}", count=actor_count))
 
         non_local = [p for p in all_players if not p["is_local"]]
+        status_parts = []
+        status_parts.append(_tr("Players: {count}", count=len(non_local)))
+        if self.esp:
+            status_parts.append("Attached")
+        else:
+            status_parts.append("Waiting...")
+        if self.hv.bridge_alive:
+            status_parts.append("HV:ON")
         painter.setPen(QPen(QColor(255, 255, 255)))
-        painter.drawText(10, 20, _tr("Players: {count}", count=len(non_local)))
+        painter.drawText(10, 20, " | ".join(status_parts))
 
         # HyperVision overlay: exposure cloud + nav paths
         if self.config.hypervision_enabled and cam:

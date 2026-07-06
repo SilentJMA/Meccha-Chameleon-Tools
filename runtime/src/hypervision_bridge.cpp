@@ -527,67 +527,159 @@ static void hv_flush_debug(std::uintptr_t world_ptr)
     process_event(world_ptr, g_hv_fns.flush_debug, nullptr, pe_fail);
 }
 
-// Background worker: runs scan + draw loop
+// Internal: run one visibility scan + path find, store into g_hv3d
+static void hv_do_scan(Reflection& ref, SdkContext& ctx,
+                       double tx, double ty, double tz,
+                       double px, double py, double pz,
+                       int quality)
+{
+    double step = quality >= 2 ? 50.0 : (quality >= 1 ? 80.0 : 120.0);
+    int z_layers = quality >= 2 ? 20 : (quality >= 1 ? 15 : 10);
+    double radius = quality >= 2 ? 2000.0 : (quality >= 1 ? 1500.0 : 1000.0);
+
+    auto lt_fn = ref.find_function(ctx.pawn, "K2_LineTrace");
+    if (!lt_fn) lt_fn = ref.find_function(ctx.pawn, "LineTraceSingle");
+    if (!lt_fn) return;
+
+    int psize = safe_read<int>(lt_fn + OffPropertiesSize, 256);
+    auto sp = ref.find_property(lt_fn, "Start");
+    auto ep = ref.find_property(lt_fn, "End");
+    auto rp = ref.find_property(lt_fn, "ReturnValue");
+    if (!sp || !ep) return;
+    int so = prop_offset(sp), eo = prop_offset(ep), ro = rp ? prop_offset(rp) : -1;
+
+    std::vector<std::tuple<double,double,double>> cloud;
+    for (int zi = 0; zi < z_layers; ++zi)
+    {
+        double zo = (zi - z_layers / 2.0) * step;
+        double zabs = tz + zo;
+        double lr = std::sqrt(std::max(0.0, radius * radius - zo * zo));
+        if (lr <= 0) continue;
+        int az = std::max(4, std::min(200, static_cast<int>(6.28318 * lr / step)));
+        for (int ai = 0; ai < az; ++ai)
+        {
+            double th = 6.28318 * ai / az;
+            double sx = tx + lr * std::cos(th), sy = ty + lr * std::sin(th);
+            std::vector<std::uint8_t> pb(static_cast<std::size_t>(psize), 0);
+            *reinterpret_cast<float*>(pb.data() + so) = static_cast<float>(sx);
+            *reinterpret_cast<float*>(pb.data() + so + 4) = static_cast<float>(sy);
+            *reinterpret_cast<float*>(pb.data() + so + 8) = static_cast<float>(zabs);
+            *reinterpret_cast<float*>(pb.data() + eo) = static_cast<float>(tx);
+            *reinterpret_cast<float*>(pb.data() + eo + 4) = static_cast<float>(ty);
+            *reinterpret_cast<float*>(pb.data() + eo + 8) = static_cast<float>(tz);
+            std::string pf;
+            if (!process_event(ctx.pawn, lt_fn, pb.data(), pf)) continue;
+            if (ro >= 0 && *reinterpret_cast<std::uint8_t*>(pb.data() + ro) == 0) continue;
+            cloud.push_back({sx, sy, zabs});
+        }
+    }
+
+    std::vector<std::vector<std::tuple<double,double,double>>> paths;
+    if (!cloud.empty())
+    {
+        int nearest = 0;
+        double best_d = 1e18;
+        for (size_t i = 0; i < cloud.size(); ++i)
+        {
+            double dx = px - std::get<0>(cloud[i]);
+            double dy = py - std::get<1>(cloud[i]);
+            double dz = pz - std::get<2>(cloud[i]);
+            double d = dx*dx + dy*dy + dz*dz;
+            if (d < best_d) { best_d = d; nearest = static_cast<int>(i); }
+        }
+        auto& target_pt = cloud[nearest];
+        int steps = std::max(3, static_cast<int>(std::sqrt(best_d) / 80.0));
+        std::vector<std::tuple<double,double,double>> path;
+        for (int i = 0; i <= steps; ++i)
+        {
+            double t = static_cast<double>(i) / steps;
+            path.push_back({px + (std::get<0>(target_pt) - px) * t,
+                            py + (std::get<1>(target_pt) - py) * t,
+                            pz + (std::get<2>(target_pt) - pz) * t});
+        }
+        paths.push_back(std::move(path));
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(g_hv3d.mtx);
+        g_hv3d.exposure_pts = std::move(cloud);
+        g_hv3d.paths = std::move(paths);
+        g_hv3d.target_x = tx; g_hv3d.target_y = ty; g_hv3d.target_z = tz;
+        g_hv3d.player_x = px; g_hv3d.player_y = py; g_hv3d.player_z = pz;
+        g_hv3d.world_ptr = ctx.world;
+        g_hv3d.has_data = true;
+    }
+}
+
+// Background worker: re-scans every 2s, draws every 500ms
 static void hv_worker_loop()
 {
+    int tick = 0;
     while (g_hv3d_running.load())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
         if (!g_hv3d.active) continue;
-        std::uintptr_t world_ptr;
-        {
-            std::lock_guard<std::mutex> lk(g_hv3d.mtx);
-            if (!g_hv3d.has_data || !g_hv3d.world_ptr) continue;
-            world_ptr = g_hv3d.world_ptr;
-        }
-        if (!world_ptr) continue;
+        ++tick;
 
         std::string failure;
         Reflection ref{};
         if (!ref.init(failure)) continue;
+        SdkContext ctx;
+        try { ctx = sdk_resolve_context(ref); }
+        catch (...) { continue; }
         try { hv_scan_find_debug_fns(ref); } catch (...) {}
-        if (!g_hv_fns.ok) continue;
+        if (!g_hv_fns.ok || !ctx.world) continue;
 
-        // Flush old debug lines
-        hv_flush_debug(world_ptr);
+        // Re-scan every 2s (tick 4 = 2000ms)
+        if (tick % 4 == 1)
+        {
+            double tx, ty, tz, px, py, pz;
+            int q;
+            {
+                std::lock_guard<std::mutex> lk(g_hv3d.mtx);
+                tx = g_hv3d.target_x; ty = g_hv3d.target_y; tz = g_hv3d.target_z;
+                px = g_hv3d.player_x; py = g_hv3d.player_y; pz = g_hv3d.player_z;
+                q = g_hv3d.quality;
+            }
+            hv_do_scan(ref, ctx, tx, ty, tz, px, py, pz, q);
+        }
 
-        // Draw exposure cloud
+        // Read current state for drawing
         std::vector<std::tuple<double,double,double>> cloud;
         std::vector<std::vector<std::tuple<double,double,double>>> paths;
         double tx, ty, tz, px, py, pz;
         {
             std::lock_guard<std::mutex> lk(g_hv3d.mtx);
+            if (!g_hv3d.has_data) continue;
             cloud = g_hv3d.exposure_pts;
             paths = g_hv3d.paths;
             tx = g_hv3d.target_x; ty = g_hv3d.target_y; tz = g_hv3d.target_z;
             px = g_hv3d.player_x; py = g_hv3d.player_y; pz = g_hv3d.player_z;
         }
 
+        // Draw
+        hv_flush_debug(ctx.world);
         for (auto& pt : cloud)
-            hv_draw_sphere(ref, world_ptr, std::get<0>(pt), std::get<1>(pt), std::get<2>(pt), 30.0f, 0.0f, 1.0f, 0.3f);
-
+            hv_draw_sphere(ref, ctx.world, std::get<0>(pt), std::get<1>(pt), std::get<2>(pt), 30.0f, 0.0f, 1.0f, 0.3f);
         for (auto& path : paths)
         {
             for (size_t i = 1; i < path.size(); ++i)
             {
                 auto& a = path[i-1]; auto& b = path[i];
-                hv_draw_line(ref, world_ptr, std::get<0>(a), std::get<1>(a), std::get<2>(a),
+                hv_draw_line(ref, ctx.world, std::get<0>(a), std::get<1>(a), std::get<2>(a),
                              std::get<0>(b), std::get<1>(b), std::get<2>(b), 0.0f, 1.0f, 0.2f, 3.0f);
             }
             if (!path.empty())
             {
                 auto& last = path.back();
-                hv_draw_sphere(ref, world_ptr, std::get<0>(last), std::get<1>(last), std::get<2>(last), 50.0f, 0.0f, 1.0f, 0.5f);
+                hv_draw_sphere(ref, ctx.world, std::get<0>(last), std::get<1>(last), std::get<2>(last), 50.0f, 0.0f, 1.0f, 0.5f);
             }
         }
-
-        hv_draw_sphere(ref, world_ptr, tx, ty, tz, 40.0f, 1.0f, 0.0f, 0.0f);
-
+        hv_draw_sphere(ref, ctx.world, tx, ty, tz, 40.0f, 1.0f, 0.0f, 0.0f);
         if (!paths.empty() && !paths[0].empty())
         {
             auto& first = paths[0][0];
-            hv_draw_line(ref, world_ptr, px, py, pz, std::get<0>(first), std::get<1>(first), std::get<2>(first), 0.0f, 1.0f, 1.0f, 2.0f);
+            hv_draw_line(ref, ctx.world, px, py, pz, std::get<0>(first), std::get<1>(first), std::get<2>(first), 0.0f, 1.0f, 1.0f, 2.0f);
         }
     }
 }
@@ -639,93 +731,11 @@ auto handle_start_hypervision(const std::string& payload) -> std::string
         g_hv3d.has_data = false;
     }
 
+    // Do initial scan
+    hv_do_scan(ref, ctx, tx, ty, tz, px, py, pz, quality);
+
     g_hv3d_running.store(true);
     g_hv3d_thread = std::thread(hv_worker_loop);
-
-    // Do initial scan for exposure cloud
-    double step = quality >= 2 ? 50.0 : (quality >= 1 ? 80.0 : 120.0);
-    int z_layers = quality >= 2 ? 20 : (quality >= 1 ? 15 : 10);
-    double radius = quality >= 2 ? 2000.0 : (quality >= 1 ? 1500.0 : 1000.0);
-
-    // Use existing visibility_scan logic inline
-    auto lt_fn = ref.find_function(ctx.pawn, "K2_LineTrace");
-    if (!lt_fn) lt_fn = ref.find_function(ctx.pawn, "LineTraceSingle");
-    if (lt_fn)
-    {
-        int psize = safe_read<int>(lt_fn + OffPropertiesSize, 256);
-        auto start_prop = ref.find_property(lt_fn, "Start");
-        auto end_prop = ref.find_property(lt_fn, "End");
-        auto ret_prop = ref.find_property(lt_fn, "ReturnValue");
-        if (start_prop && end_prop)
-        {
-            int so = prop_offset(start_prop), eo = prop_offset(end_prop), ro = ret_prop ? prop_offset(ret_prop) : -1;
-            std::vector<std::tuple<double,double,double>> cloud;
-
-            for (int zi = 0; zi < z_layers; ++zi)
-            {
-                double zo = (zi - z_layers / 2.0) * step;
-                double zabs = tz + zo;
-                double lr = std::sqrt(std::max(0.0, radius * radius - zo * zo));
-                if (lr <= 0) continue;
-                int az = std::max(4, std::min(200, static_cast<int>(6.28318 * lr / step)));
-                for (int ai = 0; ai < az; ++ai)
-                {
-                    double th = 6.28318 * ai / az;
-                    double sx = tx + lr * std::cos(th), sy = ty + lr * std::sin(th);
-
-                    std::vector<std::uint8_t> pb(static_cast<std::size_t>(psize), 0);
-                    *reinterpret_cast<float*>(pb.data() + so) = static_cast<float>(sx);
-                    *reinterpret_cast<float*>(pb.data() + so + 4) = static_cast<float>(sy);
-                    *reinterpret_cast<float*>(pb.data() + so + 8) = static_cast<float>(zabs);
-                    *reinterpret_cast<float*>(pb.data() + eo) = static_cast<float>(tx);
-                    *reinterpret_cast<float*>(pb.data() + eo + 4) = static_cast<float>(ty);
-                    *reinterpret_cast<float*>(pb.data() + eo + 8) = static_cast<float>(tz);
-                    std::string pf;
-                    if (!process_event(ctx.pawn, lt_fn, pb.data(), pf)) continue;
-                    bool hit = true;
-                    if (ro >= 0) hit = (*reinterpret_cast<std::uint8_t*>(pb.data() + ro) != 0);
-                    if (hit) cloud.push_back({sx, sy, zabs});
-                }
-            }
-
-            // Compute path: player → nearest exposure point
-            int nearest = 0;
-            double best_d = 1e18;
-            for (size_t i = 0; i < cloud.size(); ++i)
-            {
-                double dx = px - std::get<0>(cloud[i]);
-                double dy = py - std::get<1>(cloud[i]);
-                double dz = pz - std::get<2>(cloud[i]);
-                double d = dx*dx + dy*dy + dz*dz;
-                if (d < best_d) { best_d = d; nearest = static_cast<int>(i); }
-            }
-
-            std::vector<std::tuple<double,double,double>> path;
-            if (!cloud.empty())
-            {
-                auto& target_pt = cloud[nearest];
-                int steps = std::max(3, static_cast<int>(std::sqrt(best_d) / 80.0));
-                for (int i = 0; i <= steps; ++i)
-                {
-                    double t = static_cast<double>(i) / steps;
-                    path.push_back({
-                        px + (std::get<0>(target_pt) - px) * t,
-                        py + (std::get<1>(target_pt) - py) * t,
-                        pz + (std::get<2>(target_pt) - pz) * t
-                    });
-                }
-            }
-
-            // Store in state for worker to draw
-            {
-                std::lock_guard<std::mutex> lk(g_hv3d.mtx);
-                g_hv3d.exposure_pts = std::move(cloud);
-                g_hv3d.paths.clear();
-                if (!path.empty()) g_hv3d.paths.push_back(std::move(path));
-                g_hv3d.has_data = true;
-            }
-        }
-    }
 
     return response_json(true, "hypervision_started", 1, 0,
                          "HV 3D rendering started",

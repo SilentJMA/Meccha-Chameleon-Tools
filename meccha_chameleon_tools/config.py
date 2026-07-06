@@ -132,7 +132,7 @@ class Config:
     hv_quality: str = "high"
 
     # Radar terrain
-    radar_terrain: bool = True
+    radar_terrain: bool = False
     radar_z_level: int = 0
 
     # Game directory
