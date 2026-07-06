@@ -1021,8 +1021,13 @@ class Menu(QWidget):
         lo.setContentsMargins(12, 8, 12, 8)
         lo.setSpacing(6)
         lo.addWidget(QLabel(_tr("Hide by category:")))
-        pairs = [("filter_hide_enemy", _tr("Red (Enemy)")), ("filter_hide_self", _tr("Green (Self)")),
-                 ("filter_hide_teammate", _tr("Yellow (Teammate)")), ("filter_hide_unknown", _tr("Blue (Unknown)"))]
+        cm = self.config.color_mode
+        if cm == "role":
+            pairs = [("filter_hide_enemy", "Hunter (Red)"), ("filter_hide_self", _tr("Green (Self)")),
+                     ("filter_hide_teammate", "Survivor (Blue)"), ("filter_hide_unknown", "Unknown")]
+        else:
+            pairs = [("filter_hide_enemy", _tr("Red (Enemy)")), ("filter_hide_self", _tr("Green (Self)")),
+                     ("filter_hide_teammate", _tr("Yellow (Teammate)")), ("filter_hide_unknown", _tr("Blue (Unknown)"))]
         for attr, label in pairs:
             cb = QCheckBox(label)
             cb.setChecked(getattr(self.config, attr))
@@ -1277,15 +1282,10 @@ class Overlay(QWidget):
                     continue
                 if is_survivor and not self.config.survivor_esp:
                     continue
-            invincible = False
-            if self.config.invincible_detect and not is_local:
-                invincible = self.esp.get_invincible(actor)
 
             # Determine base color (team) and role color
             if is_local:
                 base_color = self.config.local_color
-            elif invincible:
-                base_color = self.config.invincible_color
             elif is_unknown:
                 base_color = self.config.unknown_color
             elif is_enemy:
@@ -1309,16 +1309,20 @@ class Overlay(QWidget):
             else:
                 color = base_color
 
+            # Invincible: always a gold X overlay, independent of color mode
+            is_invincible = False
+            if self.config.invincible_detect and not is_local:
+                is_invincible = self.esp.get_invincible(actor)
+
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
 
             if self.config.dot_esp:
                 radius = int(self.config.dot_radius * scale)
                 r = max(2, radius)
-                if cm == "hybrid" and role_color:
-                    self._draw_dot_outlined(painter, dsx, dsy, r, color, role_color)
-                else:
-                    self._draw_dot(painter, dsx, dsy, r, color)
+                self._draw_dot(painter, dsx, dsy, r, color)
+                if is_invincible:
+                    self._draw_invincible_x(painter, dsx, dsy, r)
 
             rot = self.esp.get_actor_root_rotation(actor) if actor else None
             hw = self.config.box_height_world / 3.0
@@ -1385,17 +1389,26 @@ class Overlay(QWidget):
                     label_parts.append(_tr("Teammate {idx}", idx=idx))
             if self.config.show_roles and role != "Unknown":
                 label_parts.append(_tr(role))
-            if invincible:
-                label_parts.append(_tr("INVINCIBLE"))
+            if is_invincible:
+                label_parts.append("[INV]")
             if self.config.show_distance:
                 dm = int(d / 100)
                 label_parts.append(f"{dm}m")
             if label_parts:
-                painter.setPen(QPen(QColor(*color)))
-                text = " | ".join(label_parts)
                 label_x = int(dsx + self.config.dot_radius * scale + 4)
                 label_y = int(dsy)
-                painter.drawText(label_x, label_y, text)
+                if cm == "hybrid" and role_color and role != "Unknown":
+                    painter.setPen(QPen(QColor(*color)))
+                    text = " | ".join(p for p in label_parts if p != _tr(role))
+                    painter.drawText(label_x, label_y, text)
+                    role_text = _tr(role)
+                    role_w = painter.fontMetrics().width(text + " | ") if hasattr(painter.fontMetrics(), 'width') else len(text + " | ") * 7
+                    painter.setPen(QPen(QColor(*role_color)))
+                    painter.drawText(label_x + role_w, label_y, role_text)
+                else:
+                    painter.setPen(QPen(QColor(*color)))
+                    text = " | ".join(label_parts)
+                    painter.drawText(label_x, label_y, text)
 
         if self.config.draw_all:
             actor_count = 0
@@ -1479,10 +1492,12 @@ class Overlay(QWidget):
         painter.setBrush(QColor(*color))
         painter.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
 
-    def _draw_dot_outlined(self, painter, cx, cy, r, fill, outline):
-        painter.setPen(QPen(QColor(*outline), max(1, r // 3)))
-        painter.setBrush(QColor(*fill))
-        painter.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
+    def _draw_invincible_x(self, painter, cx, cy, r):
+        gold = QColor(255, 215, 0)
+        painter.setPen(QPen(gold, max(1, r // 2)))
+        off = int(r * 0.4)
+        painter.drawLine(int(cx - off), int(cy - off), int(cx + off), int(cy + off))
+        painter.drawLine(int(cx + off), int(cy - off), int(cx - off), int(cy + off))
 
     # -----------------------------------------------------------------------
     # Aimbot
