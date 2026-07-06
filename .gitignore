@@ -84,3 +84,14 @@ runtime/.build/obj/
 # Agent config files (not for distribution)
 AGENTS.md
 *.spec
+
+# Old binaries distributed via releases, not tracked
+Meccha Chameleon Tools.exe
+
+# Old patch scripts (no longer needed)
+_patch_bridge.py
+patch_bridge.py
+patch_remaining.py
+
+# Demo media (too large for repo)
+demo.mp4
