@@ -24,8 +24,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File runtime/scripts/build.ps1
 
 ### Step 2: Copy bridge artifacts to meccha_chameleon_tools/
 ```powershell
-Copy-Item "runtime\.build\bin\runtime-bridge.dll" "meccha_chameleon_tools\runtime-bridge.dll" -Force
-Copy-Item "runtime\.build\bin\runtime-injector.exe" "meccha_chameleon_tools\runtime-injector.exe" -Force
+Copy-Item "runtime\.build\bin\meccha-camouflage.exe" "meccha_chameleon_tools\meccha-camouflage.exe" -Force
+Copy-Item "runtime\.build\bin\runtime-bridge.dll" "meccha_chameleon_tools\meccha-xenos-bridge.dll" -Force
+Copy-Item "runtime\.build\bin\runtime-injector.exe" "meccha_chameleon_tools\meccha-xenos-injector.exe" -Force
 ```
 
 ### Step 3: Build the full tool with PyInstaller

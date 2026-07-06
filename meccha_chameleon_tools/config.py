@@ -104,9 +104,36 @@ class Config:
 
     # Camouflage
     camouflage_enabled: bool = False
-    camouflage_status: str = "Ready — Press F10 to paint"
-
-    # Game directory
+    camouflage_status: str = "Ready"
+    # Paint mode: Single / Packed / Fast
+    paint_mode: str = "Packed"
+    paint_speed: float = 5.0
+    # Paint geometry settings
+    stroke_size_texels: float = 9.0
+    coverage_step_texels: float = 9.0
+    stroke_delay_ms: int = 100
+    side_source_max_uv: float = 0.08
+    front_back_source_max_uv: float = 0.45
+    server_batch_limit: int = 50
+    server_batch_delay_ms: int = 150
+    adaptive_batching: bool = False
+    # Material settings
+    auto_material: bool = False
+    metallic: float = 0.0
+    roughness: float = 1.0
+    # Region modes
+    front_region_mode: str = "fill"
+    side_region_mode: str = "paint"
+    back_region_mode: str = "paint"
+    # Fill
+    fill_color: str = "#FFFFFF"
+    fill_metallic: float = 1.0
+    fill_roughness: float = 0.0
+    # Hotkeys
+    paint_hotkey: str = "F10"
+    stop_hotkey: str = "F9"
+    # Process
+    game_process_name: str = "PenguinHotel-Win64-Shipping.exe"
     game_directory: str = r"C:\Program Files (x86)\Steam\steamapps\common\MECCA CHAMELEON\Chameleon\Binaries\Win64"
 
     # Bone indices (fallback if name resolution fails)

@@ -766,11 +766,11 @@ class MecchaESP:
 
     # ------
     # Camouflage via bundled EXE (extracted to stable %APPDATA% path)
-    DLL_NAME = "meccha-xenos-bridge.dll"
-    EXE_NAME = "meccha-camouflage.exe"
-    INJECTOR_NAME = "meccha-xenos-injector.exe"
+    DLL_NAME = "runtime-bridge.dll"
+    EXE_NAME = "runtime-injector.exe"
+    INJECTOR_NAME = "runtime-injector.exe"
     BRIDGE_HOST = "127.0.0.1"
-    BRIDGE_PORT = 47654
+    BRIDGE_PORT = 50262
     CAMO_DIR = os.path.join(os.environ.get("APPDATA", "."), "MecchaCamouflage")
 
     @staticmethod

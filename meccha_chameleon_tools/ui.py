@@ -10,7 +10,8 @@ from typing import Tuple, Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QCheckBox, QComboBox, QLabel,
     QVBoxLayout, QHBoxLayout, QPushButton, QFrame,
-    QSpinBox, QDoubleSpinBox, QSlider, QListWidget, QStackedWidget,
+    QSpinBox, QDoubleSpinBox, QSlider, QListWidget,
+    QStackedWidget, QScrollArea, QSizeGrip,
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF
@@ -22,7 +23,7 @@ from meccha_chameleon_tools.core import (
 )
 from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
-from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, stop_paint, is_bridge_alive
+from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, paint_start, paint_single, stop_paint, is_bridge_alive, send_preview, send_unpreview
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +303,11 @@ def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size,
 ES = "\u26a0 "
 
 
+class PaintSignals(QObject):
+    status = pyqtSignal(str)
+    done = pyqtSignal()
+
+
 _tab_map = {"ESP": "ESP", "HEALTH": "HEALTH", "VISUAL": "VISUAL", "RADAR": "RADAR", "AIMBOT": "AIMBOT", "PLAYER": "PLAYER", "CAMOUFLAGE": "CAMOUFLAGE"}
 
 
@@ -378,9 +384,11 @@ class Menu(QWidget):
         super().__init__()
         self.config = config
         self.esp = esp
-        self._active_tabs = tabs or ["ESP", "HEALTH", "VISUAL", "RADAR", "AIMBOT", "PLAYER"]
+        self._active_tabs = tabs or ["ESP", "HEALTH", "VISUAL", "RADAR", "AIMBOT", "PLAYER", "CAMOUFLAGE"]
         self.setWindowTitle("Meccha Chameleon Tools")
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
+        self.setWindowFlags(
+            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool
+        )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._drag_pos = None
         self._key_recorder = KeyRecorder(self._on_key_recorded)
@@ -388,7 +396,8 @@ class Menu(QWidget):
         self._outer_layout = QVBoxLayout(self)
         self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._build_ui()
-        self.setFixedSize(520, 600)
+        self.resize(640, 720)
+        self.setMinimumSize(540, 600)
 
     def _close_app(self):
         QApplication.quit()
@@ -486,8 +495,13 @@ class Menu(QWidget):
         for tab_name in self._active_tabs:
             page = QWidget()
             page.setStyleSheet("background: transparent;")
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(page)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setStyleSheet("background: transparent;")
             self._pages[tab_name] = page
-            self.stack.addWidget(page)
+            self.stack.addWidget(scroll)
 
         body.addWidget(self.tab_list)
         body.addWidget(self.stack, 1)
@@ -525,6 +539,10 @@ class Menu(QWidget):
         lang_row.addWidget(lang_label)
         lang_row.addWidget(self.lang_combo)
         lang_row.addStretch()
+        grip = QSizeGrip(container)
+        grip.setFixedSize(16, 16)
+        grip.setStyleSheet("background: transparent;")
+        lang_row.addWidget(grip)
         outer.addLayout(lang_row)
 
         footer = QHBoxLayout()
@@ -532,7 +550,7 @@ class Menu(QWidget):
         github_link = QLabel('<a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools" style="color: #8ab4f8; text-decoration: none; font-size: 9px;">GitHub</a>')
         github_link.setOpenExternalLinks(True)
         github_link.setStyleSheet("font-size: 9px;")
-        release_label = QLabel("v1.8.1-beta")
+        release_label = QLabel("v1.9.0-beta")
         release_label.setStyleSheet("color: #666; font-size: 9px;")
         copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #888; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
         copyright_link.setOpenExternalLinks(True)
@@ -847,80 +865,110 @@ class Menu(QWidget):
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
         lo.setSpacing(6)
-        hdr = QLabel(_tr("CAMOUFLAGE"))
-        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+
+        hdr = QLabel("CAMOUFLAGE")
+        hdr.setStyleSheet("font-size: 14px; font-weight: bold; color: #8ab4f8;")
         lo.addWidget(hdr)
 
-        self.cb_camo = self._chk(_tr("Enable Camouflage"), "camouflage_enabled")
-        lo.addWidget(self.cb_camo)
-
-        info = QLabel(_tr("Press F10 in-game to apply camouflage paint. The tool auto-launches the bridge and triggers F10 for you."))
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #aaa; font-size: 10px; background-color: #12121c; padding: 6px; border-radius: 4px; border: 1px solid #2a2a3e;")
-        lo.addWidget(info)
-
-        self.lbl_camo_status = QLabel(self.config.camouflage_status)
+        self.lbl_camo_status = QLabel("Ready")
         self.lbl_camo_status.setWordWrap(True)
         self.lbl_camo_status.setStyleSheet("color: #8ab4f8; font-size: 11px; font-weight: bold; background-color: #12121c; padding: 6px; border-radius: 4px; border: 1px solid #2a2a3e;")
         lo.addWidget(self.lbl_camo_status)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        self.lbl_bridge_status = QLabel("Bridge: checking...")
+        self.lbl_bridge_status.setStyleSheet("color: #aaa; font-size: 10px;")
+        lo.addWidget(self.lbl_bridge_status)
 
-        self.btn_paint = QPushButton(_tr("Paint Now"))
-        self.btn_paint.setStyleSheet("""
-            QPushButton {
-                background-color: #1e4a2a; color: #8f8;
-                border: 1px solid #2a6a3a; padding: 10px 20px;
-                border-radius: 6px; font-size: 13px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2a6a3a; border-color: #4a9a5a; }
-            QPushButton:pressed { background-color: #3a8a4a; }
-        """)
-        self.btn_paint.clicked.connect(self._on_paint_now)
-        btn_row.addWidget(self.btn_paint)
+        for text, color, cmd in [
+            ("Start Painting", "#4fd16a", self._on_paint_now),
+            ("Stop Painting", "#e74c3c", self._on_stop_camo),
+            ("Review", "#3498db", self._on_preview),
+            ("Unreview", "#f39c12", self._on_unpreview),
+        ]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(f"QPushButton {{ background-color: #1a1a1a; color: {color}; border: 1px solid #333; padding: 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }} QPushButton:hover {{ background-color: #2a2a2a; }}")
+            btn.clicked.connect(cmd)
+            lo.addWidget(btn)
 
-        self.btn_stop = QPushButton(_tr("Stop Camo (F9)"))
-        self.btn_stop.setStyleSheet("""
-            QPushButton {
-                background-color: #4a1e1e; color: #f88;
-                border: 1px solid #6a2a2a; padding: 10px 20px;
-                border-radius: 6px; font-size: 13px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #6a2a2a; border-color: #8a3a3a; }
-            QPushButton:pressed { background-color: #8a3a3a; }
-        """)
-        self.btn_stop.clicked.connect(self._on_stop_camo)
-        btn_row.addWidget(self.btn_stop)
-
-        lo.addLayout(btn_row)
         lo.addStretch()
 
+        self._bridge_timer = QTimer(self)
+        self._bridge_timer.timeout.connect(self._update_bridge_status)
+        self._bridge_timer.start(3000)
+        QTimer.singleShot(500, self._update_bridge_status)
+
+    def _update_bridge_status(self):
+        def _check():
+            alive = is_bridge_alive()
+            QTimer.singleShot(0, lambda: self._set_bridge_status(alive))
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _set_bridge_status(self, alive):
+        if alive:
+            self.lbl_bridge_status.setText("Bridge: Connected")
+            self.lbl_bridge_status.setStyleSheet("color: #8f8; font-size: 10px;")
+        else:
+            self.lbl_bridge_status.setText("Bridge: Disconnected")
+            self.lbl_bridge_status.setStyleSheet("color: #f88; font-size: 10px;")
+
     def _on_paint_now(self):
-        try:
-            err = ensure_bridge_ready()
-            if err:
-                self.lbl_camo_status.setText(f"Error: {err}")
-                return
-            self.lbl_camo_status.setText(_tr("Painting..."))
-            self.btn_paint.setEnabled(False)
-            resp = paint_now()
-            if resp.get("success") is True:
-                self.lbl_camo_status.setText(_tr("Paint Complete!"))
-            else:
-                msg = resp.get("message", _tr("Paint Failed"))
-                self.lbl_camo_status.setText(f"Error: {msg}")
-        except Exception as e:
-            self.lbl_camo_status.setText(f"Error: {e}")
-        finally:
-            self.btn_paint.setEnabled(True)
+        self.lbl_camo_status.setText("Painting...")
+        def _do():
+            try:
+                err = ensure_bridge_ready(self.config.game_process_name)
+                if err:
+                    self.lbl_camo_status.setText(f"Error: {err}")
+                    return
+                resp = paint_now(self.config)
+                if resp.get("success") is True:
+                    self.lbl_camo_status.setText("Paint Complete!")
+                else:
+                    msg = resp.get("message", "Paint Failed")
+                    self.lbl_camo_status.setText(f"Error: {msg}")
+            except Exception as e:
+                self.lbl_camo_status.setText(f"Error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _on_stop_camo(self):
-        try:
-            stop_paint()
-        except Exception:
-            pass
-        self.lbl_camo_status.setText(_tr("Ready \u2014 Press F10 to paint"))
+        def _do():
+            try:
+                stop_paint()
+            except Exception:
+                pass
+            QTimer.singleShot(0, lambda: self.lbl_camo_status.setText("Stopped"))
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _on_preview(self):
+        self.lbl_camo_status.setText("Previewing...")
+        def _do():
+            try:
+                err = ensure_bridge_ready(self.config.game_process_name)
+                if err:
+                    self.lbl_camo_status.setText(f"Error: {err}")
+                    return
+                resp = send_preview(self.config)
+                if resp.get("success") is True:
+                    self.lbl_camo_status.setText("Preview applied.")
+                else:
+                    msg = resp.get("message", "Preview failed")
+                    self.lbl_camo_status.setText(f"Error: {msg}")
+            except Exception as e:
+                self.lbl_camo_status.setText(f"Error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _on_unpreview(self):
+        self.lbl_camo_status.setText("Unreviewing...")
+        def _do():
+            try:
+                resp = send_unpreview(self.config)
+                if resp.get("success") is True:
+                    self.lbl_camo_status.setText("Preview restored.")
+                else:
+                    msg = resp.get("message", "UnPreview failed")
+                    self.lbl_camo_status.setText(f"Error: {msg}")
+            except Exception as e:
+                self.lbl_camo_status.setText(f"Error: {e}")
+        threading.Thread(target=_do, daemon=True).start()
 
     def _chk(self, text, attr):
         cb = QCheckBox(text)
@@ -998,6 +1046,8 @@ class Overlay(QWidget):
         self._cursor_shown = True
         self._tp_key_state = False
         self._player_mod_active = False
+        self._camo_notification = ""
+        self._camo_notification_tick = 0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
         self.timer.start(16)
@@ -1035,8 +1085,8 @@ class Overlay(QWidget):
 
     def _poll_keys(self):
         VK_INSERT = 0x2D
-        VK_F1 = 0x70
-        for vk, name in [(VK_INSERT, "insert"), (VK_F1, "f1")]:
+        VK_END = 0x23
+        for vk, name in [(VK_INSERT, "insert"), (0x70, "f1")]:
             state = ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000
             if state and not self._key_states.get(name):
                 for w in QApplication.topLevelWidgets():
@@ -1044,7 +1094,17 @@ class Overlay(QWidget):
                         w.setVisible(not w.isVisible())
                         break
             self._key_states[name] = bool(state)
-        VK_END = 0x23
+        paint_vk = vk_from_name(self.config.paint_hotkey)
+        paint_down = bool(ctypes.windll.user32.GetAsyncKeyState(paint_vk) & 0x8000)
+        if paint_down and not self._key_states.get("camo_paint"):
+            import threading
+            threading.Thread(target=self._run_paint, daemon=True).start()
+        self._key_states["camo_paint"] = paint_down
+        stop_vk = vk_from_name(self.config.stop_hotkey)
+        stop_down = bool(ctypes.windll.user32.GetAsyncKeyState(stop_vk) & 0x8000)
+        if stop_down and not self._key_states.get("camo_stop"):
+            stop_paint()
+        self._key_states["camo_stop"] = stop_down
         end_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_END) & 0x8000)
         if end_down and not self._key_states.get("end"):
             QApplication.quit()
@@ -1267,6 +1327,17 @@ class Overlay(QWidget):
         painter.drawText(w - 160, h - 10, _tr("Meccha Chameleon Tools"))
         painter.setFont(font)
 
+        if self._camo_notification:
+            elapsed = ctypes.windll.kernel32.GetTickCount() - self._camo_notification_tick
+            if elapsed < 5000:
+                painter.setPen(QPen(QColor(255, 200, 100, 220)))
+                notif_font = QFont("Consolas", 12)
+                painter.setFont(notif_font)
+                painter.drawText(12, 50, self._camo_notification)
+                painter.setFont(font)
+            else:
+                self._camo_notification = ""
+
         if self.config.radar_enabled and local_pos:
             radar_x = w - self.config.radar_size - 20
             radar_y = 20 + self.config.radar_size // 2
@@ -1286,6 +1357,20 @@ class Overlay(QWidget):
     # -----------------------------------------------------------------------
     # Aimbot
     # -----------------------------------------------------------------------
+    def _run_paint(self):
+        """Paint operation triggered by hotkey."""
+        err = ensure_bridge_ready(self.config.game_process_name)
+        if err:
+            self._camo_notification = f"Camo: {err}"
+        else:
+            result = paint_now(self.config)
+            if result.get("success") is True:
+                self._camo_notification = "Camo: Painting..."
+            else:
+                msg = result.get("message", "Camo failed")
+                self._camo_notification = f"Camo: {msg}"
+        self._camo_notification_tick = ctypes.windll.kernel32.GetTickCount()
+
     def _aim_key_held(self):
         vk = vk_from_name(self.config.aimbot_key)
         return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)

@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/d3f86ee2-cb53-4a96-8599-47a20beb5788
 | **Magnet** | Snap aim assist with independent FOV, strength slider, and key binding |
 | **Visuals** | Per-role Hunter/Survivor colors, invincible flag (gold), Draw All actors, Disable Buried, Show Cursor, Background Geometry toggle |
 | **Player Mod** | Speed & jump multipliers, Teleport Collectible hotkey — *host only* |
-| **Camouflage** | 🚧 **In Development** — Bridge-based in-game paint system |
+| **Camouflage** | Bridge-based in-game paint system — paint/stop/review/unreview with loader DLL injection |
 
 All features are fully external (memory read via pymem). Colors are pre-configured for optimal visibility.
 
@@ -58,6 +58,8 @@ python -m meccha_chameleon_tools
 | Insert / F1 | Toggle settings menu |
 | Y | Teleport Collectible |
 | MB4 | Magnet aim assist (hold) |
+| F10 | Start painting (configurable) |
+| F9 | Stop painting (configurable) |
 | END | Quit application |
 | Close button | Quit application |
 
@@ -75,7 +77,7 @@ python -m meccha_chameleon_tools
 
 **PLAYER** — Player Mod toggle with Speed & Jump multipliers. Teleport Collectible key binding. *Host only.*
 
-> **🚧 CAMOUFLAGE** — Tab is disabled in this release. The bridge-based paint system is under active development.
+> **CAMOUFLAGE** — Paint, stop, review, and unreview your character mesh with the bridge-based paint system. Requires the game process running.
 
 ---
 
@@ -89,9 +91,9 @@ meccha_chameleon_tools/
   core.py            Memory reading, ESP logic, role detection
   translations.py    Multi-language EN/DE/FR/ES/CN/JP/KR
   ui.py              Qt5 overlay + menu GUI
-  camouflage.py      Camouflage bridge controller (DEV)
-  runtime-bridge.dll Bridge DLL for camouflage (DEV)
-  runtime-injector.exe DLL injector for camouflage (DEV)
+  camouflage.py      Camouflage bridge controller
+  native/            Bridge DLL, loader DLL, injector EXE
+  mesh-profiles/     Mesh profile JSON configs
 ```
 
 ---
@@ -104,9 +106,8 @@ UObjectArray   → find_class, iter_objects
 OffsetResolver → dynamic property walking
 GameReader     → world, camera, players, role detection
 Overlay        → QPainter rendering loop @ 60 fps
-Menu           → PyQt5 settings window (6 tabs)
-Bridge DLL     → TCP command server for teleport, player_mod
-Camouflage     → TCP bridge client + injector (in development)
+Menu           → PyQt5 settings window (7 tabs)
+Camouflage     → loader-based bridge injection (port 50262) for mesh painting
 ```
 
 ### Memory Access
@@ -117,7 +118,7 @@ Camouflage     → TCP bridge client + injector (in development)
 4. **ESP** projects player positions through the camera view matrix.
 5. **Radar** projects positions relative to local player onto a 2D minimap.
 6. **Aimbot** reads/writes ControlRotation with configurable smoothing.
-7. **Camouflage** injects a bridge DLL into the game process and sends paint commands via TCP on port 50262 *(in development)*.
+7. **Camouflage** injects a bridge DLL (via loader + runtime-injector) into the game process and sends paint commands via TCP on port 50262.
 
 ---
 
@@ -137,7 +138,13 @@ Camouflage     → TCP bridge client + injector (in development)
 
 ## Changelog
 
-### v1.8.1-beta — Current Release
+### v1.9.0-beta — Current Release
+- Camouflage tab reworked with lighter bridge system (loader-based injection, port 50262)
+- Simplified camouflage UI (Start/Stop/Review/Unreview)
+- Native files restructured into `native/` subdirectory
+- Removed dependency on external controller EXE — Python handles injection directly
+
+### v1.8.1-beta
 - Camouflage tab added (disabled by default — in development)
 - Multi-language support (7 languages)
 - Coherent dark theme with styled combo box popup, sliders, scrollbars
