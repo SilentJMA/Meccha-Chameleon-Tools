@@ -816,45 +816,57 @@ class MecchaESP:
         pa_data, pa_count, _ = read_array(self.pm, gs + self.offsets["AGameStateBase::PlayerArray"])
         if not pa_data or pa_count == 0:
             return
-        local_pc = self._get_local_controller(world)
         local_pawn = 0
-        if local_pc:
-            local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
+        try:
+            local_pc = self._get_local_controller(world)
+            if local_pc:
+                local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
+        except Exception:
+            pass
         local_cam = self.get_camera()
         cam_pos = local_cam["loc"] if local_cam else None
         raw_players = []
         seen = set()
         for i in range(pa_count):
-            ps = rp(self.pm, pa_data + i * 8)
-            if not ps or ps in seen:
-                continue
-            seen.add(ps)
-            pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
-            if not pawn:
-                continue
-            pos = self.get_actor_root_pos(pawn)
-            if pos is None:
-                continue
-            # Skip dead players (health <= 0)
-            health, _ = self.get_health(pawn, ps) or (None, None)
-            if health is not None and health <= 0:
+            try:
+                ps = rp(self.pm, pa_data + i * 8)
+                if not ps or ps in seen:
+                    continue
+                seen.add(ps)
+                pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
+                if not pawn:
+                    continue
+                pos = self.get_actor_root_pos(pawn)
+                if pos is None:
+                    continue
+            except Exception:
                 continue
             raw_players.append((pawn, ps, pos))
         ref_is_hunter, ref_is_survivor = False, False
         is_spectating = False
-        if local_pawn:
-            _, ref_is_hunter, ref_is_survivor = self._detect_role(local_pawn)
-        elif raw_players:
-            spec_idx = self._find_spectate_target(cam_pos, raw_players) if cam_pos else 0
-            if spec_idx is None and raw_players:
-                spec_idx = 0  # fallback: first player
-            if spec_idx is not None:
-                spec_pawn = raw_players[spec_idx][0]
-                _, ref_is_hunter, ref_is_survivor = self._detect_role(spec_pawn)
-                is_spectating = True
+        try:
+            if local_pawn:
+                _, ref_is_hunter, ref_is_survivor = self._detect_role(local_pawn)
+            elif raw_players:
+                spec_idx = self._find_spectate_target(cam_pos, raw_players) if cam_pos else 0
+                if spec_idx is None and raw_players:
+                    spec_idx = 0
+                if spec_idx is not None:
+                    spec_pawn = raw_players[spec_idx][0]
+                    _, ref_is_hunter, ref_is_survivor = self._detect_role(spec_pawn)
+                    is_spectating = True
+        except Exception:
+            pass
         for i, (pawn, ps, pos) in enumerate(raw_players):
             if not include_local and pawn == local_pawn:
                 continue
+            # Skip dead players but don't crash on health read failure
+            try:
+                hp, _ = self.get_health(pawn, ps) or (None, None)
+                if hp is not None and hp <= 0:
+                    continue
+            except Exception:
+                pass
             role, is_hunter, is_survivor = self._detect_role(pawn)
             is_enemy = False
             if is_hunter or is_survivor:
