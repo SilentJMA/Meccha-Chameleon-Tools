@@ -137,12 +137,17 @@ Camouflage     → TCP bridge client + injector (in development)
 
 ## Changelog
 
-### v1.8.1-beta — Current Release
-- Camouflage tab added (disabled by default — in development)
-- Multi-language support (7 languages)
-- Coherent dark theme with styled combo box popup, sliders, scrollbars
-- Language switch fix — outer layout kept permanent to prevent blank window on rebuild
-- Cleaned up color picker remnants, old camouflage code
+### v1.8.2-wow — WIP Fusion Release (wzs12222)
+- **Team-based colors** — Green(self) / Yellow(teammate) / Red(enemy) / Blue(unknown)
+- **Background reader thread** — 10 reads/sec, eliminates render stutter
+- **Auto-attach** — tool starts without game, attaches every 2s
+- **Observer mode** — camera proximity detection for spectate targets
+- **Filter Config dialog** — hide Enemy/Self/Teammate/Unknown by category
+- **Configurable ESP FPS** — 10-60 slider in ESP tab
+- **APPDATA config path** — settings survive PyInstaller builds
+- **System language detection** — auto-detect on first launch
+- **Load Config UI sync** — checkboxes and spinboxes refresh on load
+- Retains all v1.8.1 features (7 languages, camouflage bridge, magnet, player mod, draw all, per-role toggles)
 
 ### v1.8.0 — Role detection, enemy filter, corner box
 - Role detection (Hunter/Survivor), enemy-only filter, Show Roles toggle
