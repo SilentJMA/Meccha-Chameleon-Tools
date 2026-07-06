@@ -274,7 +274,7 @@ static int g_status = 0; // 0=waiting, 1=attached, 2=in-game
 static std::vector<std::vector<double>> g_hv_cloud;
 static std::vector<std::vector<HVPathPt>> g_hv_paths;
 
-static HWND find_game() { return FindWindowW(GAME_WINDOW, nullptr); }
+static HWND find_game() { return FindWindowW(nullptr, GAME_WINDOW); }
 
 static void read_game_data() {
     g_data_tick++;
@@ -296,22 +296,24 @@ static void read_game_data() {
     for (int32_t i = 0; i < n; i++) {
         PlayerData p = {};
         p.actor = buf[i];
-        // Read position: actor -> RootComponent -> RelativeLocation
-        uint64_t root = mc_read_ptr(buf[i] + 0x130); // AActor::RootComponent
+        // Read position: actor -> RootComponent -> RelativeLocation (dynamic offsets)
+        int32_t off_rc = mc_get_offset("RootComponent");
+        int32_t off_rl = mc_get_offset("RelativeLocation");
+        uint64_t root = (off_rc >= 0) ? mc_read_ptr(buf[i] + off_rc) : 0;
         if (!root) continue;
-        double pd[3];
-        if (!mc_read_vec3(root + 0x11C, pd) && !mc_read_vec3_f(root + 0x11C, (float*)pd)) continue; // double then float
+        double pd[3] = {};
         // Try double first, fallback to float
-        if (!mc_read_vec3(root + 0x11C, pd)) {
+        int32_t loc_off = (off_rl >= 0) ? off_rl : 0x11C;
+        if (!mc_read_vec3(root + loc_off, pd)) {
             float pf[3];
-            if (!mc_read_vec3_f(root + 0x11C, pf)) continue;
+            if (!mc_read_vec3_f(root + loc_off, pf)) continue;
             pd[0]=pf[0]; pd[1]=pf[1]; pd[2]=pf[2];
         }
         p.pos[0]=pd[0]; p.pos[1]=pd[1]; p.pos[2]=pd[2];
         // Read rotation (FRotator: pitch, yaw, roll)
         float rot_f[3]={};
-        mc_read_vec3_f(root + 0x128, rot_f);
-        p.yaw = rot_f[1]; // yaw
+        mc_read_vec3_f(root + loc_off + 12, rot_f); // RelativeRotation is 12 bytes after RelativeLocation (float FRotator)
+        p.yaw = rot_f[1];
         p.head[0]=pd[0]; p.head[1]=pd[1]; p.head[2]=pd[2]+80;
         p.health = mc_player_get_health(buf[i], 0);
         p.shield = mc_read_float(buf[i] + 0x140);
@@ -872,18 +874,24 @@ static void do_aimbot() {
     double aim_pitch = -asin(dz/len) * 180.0 / PI;
     double aim_yaw   = atan2(dy, dx) * 180.0 / PI;
 
-    // Write ControlRotation - find address via known offset chain
-    uint64_t world = mc_read_ptr(0) ? mc_read_ptr(0xE56860) : 0;
+    // Write ControlRotation via resolved offsets
+    uint64_t world = mc_get_world();
     if (!world) return;
-    uint64_t gi = mc_read_ptr(world + 0x188);
+    int32_t off_gi = mc_get_offset("OwningGameInstance");
+    int32_t off_lp = mc_get_offset("LocalPlayers");
+    int32_t off_pc = mc_get_offset("PlayerController");
+    if (off_gi < 0 || off_lp < 0 || off_pc < 0) return;
+    uint64_t gi = mc_read_ptr(world + off_gi);
     if (!gi) return;
-    uint64_t lp_arr = mc_read_ptr(gi + 0x38);
+    uint64_t lp_arr = mc_read_ptr(gi + off_lp);
     if (!lp_arr) return;
     uint64_t lp = mc_read_ptr(lp_arr);
     if (!lp) return;
-    uint64_t pc2 = mc_read_ptr(lp + 0x30);
+    uint64_t pc2 = mc_read_ptr(lp + off_pc);
     if (!pc2) return;
-    uint64_t cr_addr = pc2 + 0x320; // AController::ControlRotation
+    int32_t off_cr = mc_resolve_offset("Controller", "ControlRotation");
+    if (off_cr < 0) return;
+    uint64_t cr_addr = pc2 + off_cr;
 
     float cur_pitch = mc_read_float(cr_addr);
     float cur_yaw   = mc_read_float(cr_addr+4);
@@ -922,6 +930,11 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 // =========================== Main ===============================
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     for (int i = 0; i < 30; i++) { if (mc_init()) break; Sleep(2000); }
+    if (mc_is_attached()) {
+        int eng_ret = mc_init_engine();
+        // eng_ret: 0=ok, -1=no GUObjectArray, -2=no FNamePool, -3=no GEngine
+        (void)eng_ret;
+    }
     load_config();
 
     WNDCLASSEXW wc = {sizeof(wc), CS_HREDRAW|CS_VREDRAW, wnd_proc};

@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 #include <tlhelp32.h>
 #include <psapi.h>
 #pragma comment(lib, "psapi")
@@ -30,6 +32,18 @@ static uint64_t        g_fname_block_buf[1024];
 
 // Offset cache
 static std::unordered_map<std::string, int32_t> g_offset_cache;
+
+// Engine globals (resolved at init)
+static uint64_t g_gengine = 0;
+static int32_t  off_GameViewport = -1;
+static int32_t  off_World = -1;
+static int32_t  off_OwningGameInstance = -1;
+static int32_t  off_LocalPlayers = -1;
+static int32_t  off_PlayerController = -1;
+static int32_t  off_PlayerCameraManager = -1;
+static int32_t  off_CameraCachePrivate = -1;
+static int32_t  off_ActorRootComponent = -1;
+static int32_t  off_RelativeLocation = -1;
 
 // ---------------------------------------------------------------------------
 // Process helpers
@@ -159,6 +173,121 @@ static uint64_t obj_from_index(uint32_t idx) {
     uint64_t obj = 0;
     if (!read_raw(chunk + slot_idx * 8, &obj, 8)) return 0;
     return obj;
+}
+
+// ---------------------------------------------------------------------------
+// Engine init (matches Python MecchaESP.__init__)
+// ---------------------------------------------------------------------------
+static int scan_guobject_array() {
+    const uint8_t sig[] = {0x48,0x8D,0x05,0x00,0x00,0x00,0x00,0x48,0x89,0x01,0x45,0x8B,0xD1};
+    const char mask[] = "xxx????xxxxxx";
+    const char* mod = "PenguinHotel-Win64-Shipping.exe";
+    uint64_t addr = mc_pattern_scan(mod, (const char*)sig, mask);
+    if (!addr) return -1;
+    int32_t rel = 0;
+    if (!read_raw(addr + 3, &rel, 4)) return -1;
+    uint64_t obj_array = addr + 7 + rel;
+    // Verify: read element count
+    uint32_t num = mc_read_u32(obj_array + 0x14 + 0x10); // obj_array + 0x24 (offset to NumElements)
+    if (num == 0 || num > 10000000) return -1;
+    mc_uobject_init(obj_array, num);
+    return 0;
+}
+
+static int scan_fname_pool(uint64_t guobject_addr) {
+    // Try delta from GUObjectArray first
+    uint64_t delta = guobject_addr - 0xE3B40;
+    mc_fname_init(delta);
+    char buf[256];
+    bool ok = mc_fname_resolve(0, buf, 256) > 0 && strcmp(buf, "None") == 0;
+    if (ok) return 0;
+
+    // Try pattern scan
+    const char* patterns[] = {
+        "48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8B 01 FF 50 68",
+        "48 8D 3D ?? ?? ?? ?? 48 85 FF 74 0C",
+        "48 8D 35 ?? ?? ?? ?? 8B D6 48 8D 0D",
+        "48 8D 05 ?? ?? ?? ?? 48 89 44 24 ?? 48 8D 0D",
+    };
+    const char* masks[] = {
+        "xxx????x????xxx????xxx????xxxxxxxx",
+        "xxx????xxxxxx",
+        "xxx????xxxxxxx?xxx??",
+        "xxx????xxxxxxx????",
+    };
+    const char* mod = "PenguinHotel-Win64-Shipping.exe";
+    for (int i = 0; i < 4; i++) {
+        std::string sig_str;
+        const char* p = patterns[i];
+        while (*p) { if (*p != ' ') sig_str += *p; p++; }
+        uint64_t addr = mc_pattern_scan(mod, sig_str.c_str(), masks[i]);
+        if (!addr) continue;
+        int32_t rel = 0;
+        if (!read_raw(addr + 3, &rel, 4)) continue;
+        uint64_t pool = addr + 7 + rel;
+        mc_fname_init(pool);
+        char b[256];
+        if (mc_fname_resolve(0, b, 256) > 0 && strcmp(b, "None") == 0) return 0;
+    }
+    return -1;
+}
+
+int mc_init_engine(void) {
+    // Step 1: Scan GUObjectArray
+    if (scan_guobject_array() != 0) return -1;
+    // Step 2: Scan FNamePool
+    if (scan_fname_pool(g_obj_array) != 0) return -2;
+
+    // Step 3: Find GEngine instance via UObjectArray
+    g_gengine = 0;
+    for (uint32_t i = 0; i < g_obj_count; i++) {
+        uint64_t obj = obj_from_index(i);
+        if (!obj) continue;
+        char cn[64];
+        if (mc_uobject_class_name(obj, cn, 64) > 0 && strcmp(cn, "GameEngine") == 0) {
+            g_gengine = obj;
+            break;
+        }
+    }
+    if (!g_gengine) return -3;
+
+    // Step 4: Resolve critical offsets (same as Python OFFSET_MAP)
+    auto ro = [](const char* cls, const char* prop) -> int32_t {
+        return mc_resolve_offset(cls, prop);
+    };
+    off_GameViewport       = ro("GameEngine", "GameViewport");
+    off_World              = ro("GameViewportClient", "World");
+    off_OwningGameInstance = ro("World", "OwningGameInstance");
+    off_LocalPlayers       = ro("GameInstance", "LocalPlayers");
+    off_PlayerController   = ro("Player", "PlayerController");
+    off_PlayerCameraManager= ro("PlayerController", "PlayerCameraManager");
+    off_CameraCachePrivate = ro("PlayerCameraManager", "CameraCachePrivate");
+    off_ActorRootComponent = ro("Actor", "RootComponent");
+    off_RelativeLocation   = ro("SceneComponent", "RelativeLocation");
+
+    return 0;
+}
+
+uint64_t mc_get_engine(void) { return g_gengine; }
+
+uint64_t mc_get_world(void) {
+    if (!g_gengine || off_GameViewport < 0 || off_World < 0) return 0;
+    uint64_t vp = mc_read_ptr(g_gengine + off_GameViewport);
+    if (!vp) return 0;
+    return mc_read_ptr(vp + off_World);
+}
+
+int32_t mc_get_offset(const char* key) {
+    if (strcmp(key, "GameViewport") == 0) return off_GameViewport;
+    if (strcmp(key, "World") == 0) return off_World;
+    if (strcmp(key, "OwningGameInstance") == 0) return off_OwningGameInstance;
+    if (strcmp(key, "LocalPlayers") == 0) return off_LocalPlayers;
+    if (strcmp(key, "PlayerController") == 0) return off_PlayerController;
+    if (strcmp(key, "PlayerCameraManager") == 0) return off_PlayerCameraManager;
+    if (strcmp(key, "CameraCachePrivate") == 0) return off_CameraCachePrivate;
+    if (strcmp(key, "RootComponent") == 0) return off_ActorRootComponent;
+    if (strcmp(key, "RelativeLocation") == 0) return off_RelativeLocation;
+    return -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,31 +581,33 @@ int32_t mc_resolve_offset(const char* class_name, const char* prop_name) {
 }
 
 // ---------------------------------------------------------------------------
-// API: Camera
+// API: Camera (uses dynamic offsets from mc_init_engine)
 // ---------------------------------------------------------------------------
 bool mc_read_camera(double loc[3], double rot[3], float* fov) {
-    uint64_t world = mc_read_ptr(g_base + 0xE56860); // GWorld offset
+    uint64_t world = mc_get_world();
     if (!world) return false;
-    uint64_t owning_level = mc_read_ptr(world + 0x38);
-    if (!owning_level) return false;
-    uint64_t actors = mc_read_ptr(owning_level + 0x98);
-    if (!actors) return false;
-    uint32_t actor_count = mc_read_u32(owning_level + 0xA0);
-    if (actor_count == 0) return false;
-    // Find local player via GameInstance
-    uint64_t game_instance = mc_read_ptr(world + 0x188);
-    if (!game_instance) return false;
-    uint64_t local_players = mc_read_ptr(game_instance + 0x38);
-    if (!local_players) return false;
-    uint64_t local_player = mc_read_ptr(local_players);
-    if (!local_player) return false;
-    uint64_t controller = mc_read_ptr(local_player + 0x30);
-    if (!controller) return false;
-    uint64_t camera_manager = mc_read_ptr(controller + 0x478);
-    if (!camera_manager) return false;
-    uint64_t camera_cache = mc_read_ptr(camera_manager + 0x1F0 + 0x10);
-    if (!camera_cache) camera_cache = camera_manager + 0x1F0;
-    uint64_t pov = camera_cache + OFF_Camera_POV;
+    if (off_OwningGameInstance < 0 || off_LocalPlayers < 0) return false;
+    uint64_t gi = mc_read_ptr(world + off_OwningGameInstance);
+    if (!gi) return false;
+    uint64_t lp_data = mc_read_ptr(gi + off_LocalPlayers);
+    if (!lp_data) return false;
+    uint64_t lp = mc_read_ptr(lp_data);
+    if (!lp) return false;
+    if (off_PlayerController < 0) return false;
+    uint64_t pc = mc_read_ptr(lp + off_PlayerController);
+    if (!pc) return false;
+    if (off_PlayerCameraManager < 0) return false;
+    uint64_t cm = mc_read_ptr(pc + off_PlayerCameraManager);
+    if (!cm) return false;
+    // CameraCachePrivate: try pointer-based first, then direct offset
+    uint64_t cc = 0;
+    if (off_CameraCachePrivate >= 0) {
+        cc = mc_read_ptr(cm + off_CameraCachePrivate + 0x10);
+        if (!cc) cc = cm + off_CameraCachePrivate;
+    } else {
+        return false;
+    }
+    uint64_t pov = cc + OFF_Camera_POV;
     if (!read_raw(pov + OFF_POV_Location, loc, 24)) return false;
     if (!read_raw(pov + OFF_POV_Rotation, rot, 24)) return false;
     *fov = mc_read_float(pov + OFF_POV_FOV);
@@ -484,27 +615,43 @@ bool mc_read_camera(double loc[3], double rot[3], float* fov) {
 }
 
 // ---------------------------------------------------------------------------
-// Player / role detection stubs (delegated to Python for now)
+// API: Players (via GameState->PlayerArray, matching Python)
 // ---------------------------------------------------------------------------
 int32_t mc_read_players(uint64_t* buf, int32_t max_count) {
-    // Simplified: basic player enumeration
     int32_t count = 0;
-    uint64_t world = mc_read_ptr(g_base + 0xE56860);
+    uint64_t world = mc_get_world();
     if (!world) return 0;
-    uint64_t level = mc_read_ptr(world + 0x38);
-    if (!level) return 0;
-    uint64_t actors = mc_read_ptr(level + 0x98);
-    if (!actors) return 0;
-    uint32_t total = mc_read_u32(level + 0xA0);
-    if (total > 1000) total = 1000;
-    for (uint32_t i = 0; i < total && count < max_count; i++) {
-        uint64_t actor = mc_read_ptr(actors + (uint64_t)i * 8);
-        if (!actor) continue;
-        // Check if it's a player (has PlayerState)
-        uint64_t state = mc_read_ptr(actor + 0x2A8);
-        if (state && mc_read_ptr(state + 0x10)) {
-            buf[count++] = actor;
+    // Get GameState from world
+    int32_t off_GameState = mc_resolve_offset("World", "GameState");
+    if (off_GameState < 0) return 0;
+    uint64_t gs = mc_read_ptr(world + off_GameState);
+    if (!gs) return 0;
+    // Get PlayerArray from GameState
+    int32_t off_PlayerArray = mc_resolve_offset("GameStateBase", "PlayerArray");
+    if (off_PlayerArray < 0) return 0;
+    uint64_t pa_data = 0; uint32_t pa_count = 0;
+    if (!mc_read_tarray(gs + off_PlayerArray, &pa_data, &pa_count)) return 0;
+    if (pa_count > max_count) pa_count = (uint32_t)max_count;
+    // Get PawnPrivate from each PlayerState
+    int32_t off_PawnPrivate = mc_resolve_offset("PlayerState", "PawnPrivate");
+    int32_t off_PlayerState = mc_resolve_offset("Controller", "PlayerState");
+    int32_t off_AcknowledgedPawn = mc_resolve_offset("PlayerController", "AcknowledgedPawn");
+    for (uint32_t i = 0; i < pa_count; i++) {
+        uint64_t ps = mc_read_ptr(pa_data + (uint64_t)i * 8);
+        if (!ps) continue;
+        uint64_t actor = 0;
+        if (off_PawnPrivate >= 0) actor = mc_read_ptr(ps + off_PawnPrivate);
+        if (!actor && off_AcknowledgedPawn >= 0) {
+            // Fallback: find controller via PlayerState, then AcknowledgedPawn
+            for (uint32_t j = 0; j < g_obj_count && !actor; j++) {
+                uint64_t obj = obj_from_index(j);
+                if (!obj) continue;
+                if (off_PlayerState < 0) break;
+                uint64_t pstate = mc_read_ptr(obj + off_PlayerState);
+                if (pstate == ps) { actor = mc_read_ptr(obj + off_AcknowledgedPawn); }
+            }
         }
+        if (actor) buf[count++] = actor;
     }
     return count;
 }

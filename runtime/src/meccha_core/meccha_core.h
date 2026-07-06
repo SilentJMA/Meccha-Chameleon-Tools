@@ -12,6 +12,12 @@ MECCHA_CORE_API void  mc_cleanup(void);
 MECCHA_CORE_API bool  mc_is_attached(void);
 MECCHA_CORE_API uint32_t mc_pid(void);
 
+// === Full Engine Init (Python-compatible dynamic offset resolution) ===
+MECCHA_CORE_API int   mc_init_engine(void); // 0=ok, -1=no GUObjectArray, -2=no FNamePool, -3=no GEngine
+MECCHA_CORE_API uint64_t mc_get_engine(void);
+MECCHA_CORE_API uint64_t mc_get_world(void);
+MECCHA_CORE_API int32_t  mc_get_offset(const char* key);
+
 // === Memory Read ===
 MECCHA_CORE_API bool       mc_read(uint64_t addr, void* buf, size_t size);
 MECCHA_CORE_API uint64_t   mc_read_ptr(uint64_t addr);
