@@ -147,6 +147,16 @@ _TR = {
     "Painting...": {"DE": "Male...", "FR": "Peinture en cours...", "ES": "Pintando...", "CN": "\u6d82\u88c5\u4e2d...", "JP": "\u63cf\u3044\u3066\u3044\u307e\u3059...", "KR": "\ud39c\ud2b8 \uc911..."},
     "Paint Complete!": {"DE": "Malerei abgeschlossen!", "FR": "Peinture termin\u00e9e!", "ES": "\u00a1Pintura completada!", "CN": "\u6d82\u88c5\u5b8c\u6210!", "JP": "\u63cf\u753b\u5b8c\u4e86!", "KR": "\ud39c\ud2b8 \uc644\ub8cc!"},
     "Paint Failed": {"DE": "Malerei fehlgeschlagen", "FR": "\u00c9chec de la peinture", "ES": "Pintura fallida", "CN": "\u6d82\u88c5\u5931\u8d25", "JP": "\u63cf\u753b\u5931\u6557", "KR": "\ud39c\ud2b8 \uc2e4\ud328"},
+    "Refresh FPS:": {"CN": "\u5237\u65b0\u5e27\u7387:"},
+    "Filter Config": {"CN": "\u8fc7\u6ee4\u914d\u7f6e"},
+    "Hide by category:": {"CN": "\u6309\u7c7b\u522b\u9690\u85cf:"},
+    "Red (Enemy)": {"CN": "\u7ea2\u8272\uff08\u654c\u4eba\uff09"},
+    "Green (Self)": {"CN": "\u7eff\u8272\uff08\u81ea\u5df1\uff09"},
+    "Yellow (Teammate)": {"CN": "\u9ec4\u8272\uff08\u961f\u53cb\uff09"},
+    "Blue (Unknown)": {"CN": "\u84dd\u8272\uff08\u672a\u77e5\uff09"},
+    "OK": {"CN": "\u786e\u5b9a"},
+    "Waiting for game...": {"CN": "\u7b49\u5f85\u6e38\u620f\u542f\u52a8..."},
+    "Teammate {idx}": {"CN": "\u961f\u53cb {idx}"},
 }
 
 

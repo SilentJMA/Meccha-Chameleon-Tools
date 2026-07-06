@@ -598,7 +598,7 @@ class Menu(QWidget):
         dr.addWidget(self.spn_dot)
         lo.addLayout(dr)
         fr = QHBoxLayout()
-        fr.addWidget(QLabel("Refresh FPS:"))
+        fr.addWidget(QLabel(_tr("Refresh FPS:")))
         self.spn_fps = QSpinBox()
         self.spn_fps.setRange(10, 60)
         self.spn_fps.setValue(self.config.esp_fps)
@@ -609,7 +609,7 @@ class Menu(QWidget):
         sep.setFrameShape(QFrame.HLine)
         sep.setStyleSheet("color: #2a2a3e;")
         lo.addWidget(sep)
-        self.btn_filter = QPushButton("Filter Config")
+        self.btn_filter = QPushButton(_tr("Filter Config"))
         self.btn_filter.clicked.connect(self._show_filter_dialog)
         lo.addWidget(self.btn_filter)
         lo.addStretch()
@@ -995,7 +995,7 @@ class Menu(QWidget):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QPushButton, QLabel
         from PyQt5.QtCore import Qt
         dlg = QDialog(self)
-        dlg.setWindowTitle("Filter Config")
+        dlg.setWindowTitle(_tr("Filter Config"))
         dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.Dialog | Qt.WindowCloseButtonHint)
         dlg.setFixedSize(260, 220)
         dlg.setStyleSheet("""
@@ -1010,15 +1010,15 @@ class Menu(QWidget):
         lo = QVBoxLayout(dlg)
         lo.setContentsMargins(12, 8, 12, 8)
         lo.setSpacing(6)
-        lo.addWidget(QLabel("Hide by category:"))
-        pairs = [("filter_hide_enemy", "Red (Enemy)"), ("filter_hide_self", "Green (Self)"),
-                 ("filter_hide_teammate", "Yellow (Teammate)"), ("filter_hide_unknown", "Blue (Unknown)")]
+        lo.addWidget(QLabel(_tr("Hide by category:")))
+        pairs = [("filter_hide_enemy", _tr("Red (Enemy)")), ("filter_hide_self", _tr("Green (Self)")),
+                 ("filter_hide_teammate", _tr("Yellow (Teammate)")), ("filter_hide_unknown", _tr("Blue (Unknown)"))]
         for attr, label in pairs:
             cb = QCheckBox(label)
             cb.setChecked(getattr(self.config, attr))
             cb.toggled.connect(lambda checked, a=attr: setattr(self.config, a, checked))
             lo.addWidget(cb)
-        btn_ok = QPushButton("OK")
+        btn_ok = QPushButton(_tr("OK"))
         btn_ok.clicked.connect(dlg.accept)
         lo.addWidget(btn_ok)
         dlg.exec_()
@@ -1196,7 +1196,7 @@ class Overlay(QWidget):
 
         if self.esp is None:
             painter.setPen(QPen(QColor(180, 180, 180)))
-            painter.drawText(10, 20, "Waiting for game...")
+            painter.drawText(10, 20, _tr("Waiting for game..."))
             self._rendering = False
             return
 
@@ -1333,7 +1333,7 @@ class Overlay(QWidget):
                 elif is_enemy:
                     label_parts.append(_tr("Enemy {idx}", idx=idx))
                 else:
-                    label_parts.append(f"Teammate {idx}")
+                    label_parts.append(_tr("Teammate {idx}", idx=idx))
             if self.config.show_roles and role != "Unknown":
                 label_parts.append(_tr(role))
             if invincible:
