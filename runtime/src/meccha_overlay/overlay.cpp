@@ -236,7 +236,7 @@ static bool init_d2d(HWND hwnd) {
     RECT rc; GetClientRect(hwnd, &rc);
     if (FAILED(g_d2d->CreateHwndRenderTarget(
         D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_HARDWARE,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
         D2D1::HwndRenderTargetProperties(hwnd, D2D1::SizeU(rc.right-rc.left, rc.bottom-rc.top)), &g_rt)))
         return false;
     g_rt->CreateSolidColorBrush(D2D1::ColorF(1,1,1,1), &g_brush);
@@ -766,13 +766,13 @@ static void ren_draw_all(UINT sw, UINT sh) {
 
 // =========================== Main Render ========================
 static void render_frame() {
-    if (!g_rt || g_overlay != GetForegroundWindow()) return;
+    if (!g_rt) return;
     RECT rc; GetClientRect(g_overlay, &rc);
     UINT sw = (UINT)(rc.right-rc.left), sh = (UINT)(rc.bottom-rc.top);
     if (sw == 0 || sh == 0) return;
 
     g_rt->BeginDraw();
-    g_rt->Clear({0,0,0,0});
+    g_rt->Clear(D2D1::ColorF(0,0,0,1));
 
     if (g_status == 0) {
         txt_s(L"Waiting for game...", (float)sw/2-80, (float)sh/2, {0.5f,0.5f,0.5f,1});
@@ -952,7 +952,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         OVERLAY_CLASS, L"Meccha Overlay", WS_POPUP,
         g_rect.left, g_rect.top, w_px, h_px, 0, 0, hInst, 0);
     if (!g_overlay) return 1;
-    SetLayeredWindowAttributes(g_overlay, 0, 255, LWA_ALPHA);
+    SetLayeredWindowAttributes(g_overlay, RGB(0,0,0), 0, LWA_COLORKEY);
     SetWindowPos(g_overlay, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
 
     if (!init_d2d(g_overlay)) return 1;
