@@ -692,63 +692,48 @@ class MecchaESP:
             except Exception:
                 continue
 
-    def scan_terrain(self, center=None, range_xy=5000.0, z_samples=3, z_range=1000.0):
-        """Scan StaticMeshActors only (skip Function/Class/Package etc)."""
-        segments = []
-        VALID_CLASSES = ("StaticMeshActor", "StaticMeshComponent", "SplineMeshComponent",
-                         "InstancedStaticMeshComponent", "Building", "Wall", "Floor",
-                         "SM_", "Chunk", "MeshActor", "BlockingVolume")
+    def scan_terrain(self, center=None, range_xy=10000.0):
+        """Scan ALL actors with a root position; return 2D points for map."""
+        points = []
         if center is None:
             cam = self.get_camera()
             if not cam:
-                return segments
+                return points
             center = cam["loc"]
-        z_min = center[2] - z_range * 0.5
-        z_max = center[2] + z_range * 0.5
-        z_step = (z_max - z_min) / max(1, z_samples)
         half = range_xy * 0.5
         count = 0
         t0 = time.time()
         for obj in self.objects.iter_objects():
-            if count >= 2000:
+            if count >= 20000:
                 break
             try:
                 cls = self.objects.class_name(obj)
                 if not cls or cls.startswith("Default__"):
                     continue
-                if not any(v in cls for v in VALID_CLASSES):
+                # Skip non-actor types
+                if any(x in cls for x in ("Function", "Class", "Package", "Enum",
+                                           "ScriptStruct", "Property", "Field",
+                                           "Interface", "Delegate", "MetaData")):
                     continue
                 root = rp(self.pm, obj + self.offsets.get("AActor::RootComponent", 0))
                 if not root:
                     continue
                 ox = rfloat(self.pm, root + 0x120)
                 oy = rfloat(self.pm, root + 0x124)
-                oz = rfloat(self.pm, root + 0x128)
-                if not (math.isfinite(ox) and math.isfinite(oy) and math.isfinite(oz)):
+                if not (math.isfinite(ox) and math.isfinite(oy)):
                     continue
-                if abs(ox) < 1 and abs(oy) < 1 and abs(oz) < 1:
+                if abs(ox) < 0.1 and abs(oy) < 0.1:
                     continue
                 if abs(ox - center[0]) > half or abs(oy - center[1]) > half:
                     continue
-                be_x = abs(rfloat(self.pm, root + 0x158))
-                be_y = abs(rfloat(self.pm, root + 0x15C))
-                be_z = abs(rfloat(self.pm, root + 0x160))
-                if not (math.isfinite(be_x) and math.isfinite(be_y) and math.isfinite(be_z)):
-                    continue
-                if max(be_x, be_y, be_z) < 10 or max(be_x, be_y, be_z) > 50000:
-                    continue
-                for zi in range(z_samples):
-                    test_z = z_min + zi * z_step
-                    x1, y1 = ox - be_x, oy - be_y
-                    x2, y2 = ox + be_x, oy + be_y
-                    segments.append((x1, y1, x2, y2, "wall", test_z))
+                points.append((ox, oy, cls))
                 count += 1
             except Exception:
                 continue
         dt = time.time() - t0
         from meccha_chameleon_tools import logger as log
-        log.debug(f"scan_terrain: {count} objects, {len(segments)} segs, {dt*1000:.0f}ms")
-        return segments
+        log.debug(f"scan_terrain: {count} points in {dt*1000:.0f}ms")
+        return points
 
     def _is_visible(self, actor):
         """Approximate visibility check: read body/sphere visibility flag if available."""

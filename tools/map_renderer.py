@@ -25,74 +25,64 @@ def w2s(wx, wy, cx, cy, yaw_deg, scale):
     return (rx * scale, -ry * scale)
 
 
-def render_segments(segments, output_path, center=None, map_size=4096):
-    """将地形线段渲染为 PNG。"""
-    if not segments:
-        print("[!] 无地形数据可渲染")
+def render_points(points, output_path, map_size=4096):
+    """将地形点云渲染为 2D 俯视图 PNG。"""
+    if not points:
+        print("[!] 无数据可渲染")
         return
 
-    # 收集坐标范围
-    xs, ys = [], []
-    for s in segments:
-        for v in [s[0], s[2]]:
-            if math.isfinite(v): xs.append(v)
-        for v in [s[1], s[3]]:
-            if math.isfinite(v): ys.append(v)
+    xs = [p[0] for p in points if math.isfinite(p[0])]
+    ys = [p[1] for p in points if math.isfinite(p[1])]
     if not xs or not ys:
         print("[!] 无有效坐标")
         return
 
-    if center:
-        cx, cy = center
-    else:
-        cx = (min(xs) + max(xs)) / 2
-        cy = (min(ys) + max(ys)) / 2
-
-    # 计算缩放
+    cx = (min(xs) + max(xs)) / 2
+    cy = (min(ys) + max(ys)) / 2
     world_w = max(xs) - min(xs)
     world_h = max(ys) - min(ys)
-    margin = 0.1
+    margin = 0.05
     scale = min(map_size * (1 - margin) / max(world_w, 1),
                 map_size * (1 - margin) / max(world_h, 1))
 
     img = Image.new("RGBA", (map_size, map_size), (20, 20, 30, 255))
     draw = ImageDraw.Draw(img)
 
-    # 画网格
-    grid_size = 1000  # 每 1000 单位一格
-    for gx in range(int(min(xs) / grid_size) * grid_size,
-                    int(max(xs) / grid_size) * grid_size + grid_size, grid_size):
-        sx, sy = w2s(gx, 0, cx, cy, 0, scale)
-        sx = int(sx + map_size / 2)
-        draw.line([(sx, 0), (sx, map_size)], fill=(40, 40, 60))
+    # 网格 (每 10000 单位)
+    grid = 10000
+    for gx in range(int(min(xs) // grid) * grid, int(max(xs) // grid) * grid + grid, grid):
+        sx = int(w2s(gx, 0, cx, cy, 0, scale)[0] + map_size / 2)
+        draw.line([(sx, 0), (sx, map_size)], fill=(35, 35, 50))
+    for gy in range(int(min(ys) // grid) * grid, int(max(ys) // grid) * grid + grid, grid):
+        sy = int(w2s(0, gy, cx, cy, 0, scale)[1] + map_size / 2)
+        draw.line([(0, sy), (map_size, sy)], fill=(35, 35, 50))
 
-    # 画地形线段
-    seg_count = 0
-    for s in segments:
+    # 按类名分类着色
+    colors = {
+        "StaticMeshActor": (100, 180, 255),
+        "StaticMesh": (100, 160, 220),
+        "SplineMesh": (80, 200, 120),
+        "InstancedStaticMesh": (200, 180, 100),
+    }
+    default_color = (140, 140, 160)
+    drawn = 0
+    for x, y, cls in points:
         try:
-            x1, y1, x2, y2 = s[0], s[1], s[2], s[3]
-            if not all(math.isfinite(v) for v in (x1, y1, x2, y2)):
-                continue
-            sx1, sy1 = w2s(x1, y1, cx, cy, 0, scale)
-            sx2, sy2 = w2s(x2, y2, cx, cy, 0, scale)
-            sx1 = int(sx1 + map_size / 2)
-            sy1 = int(sy1 + map_size / 2)
-            sx2 = int(sx2 + map_size / 2)
-            sy2 = int(sy2 + map_size / 2)
-            if len(s) >= 4:
-                stype = s[4] if len(s) > 4 else "wall"
-                color = {"wall": (140, 180, 220), "overhang": (120, 80, 80)}.get(stype, (100, 100, 120))
-            else:
-                color = (100, 100, 120)
-            draw.line([(sx1, sy1), (sx2, sy2)], fill=color, width=2)
-            seg_count += 1
+            sx = int(w2s(x, y, cx, cy, 0, scale)[0] + map_size / 2)
+            sy = int(w2s(x, y, cx, cy, 0, scale)[1] + map_size / 2)
+            color = default_color
+            for k, c in colors.items():
+                if k in cls:
+                    color = c
+                    break
+            draw.ellipse([(sx - 1, sy - 1), (sx + 1, sy + 1)], fill=color)
+            drawn += 1
         except Exception:
             continue
 
     img.save(output_path, "PNG")
-    print(f"[+] 渲染完成: {seg_count} 线段 → {output_path}")
-    print(f"    地图范围: X=[{min(xs):.0f}, {max(xs):.0f}], Y=[{min(ys):.0f}, {max(ys):.0f}]")
-    print(f"    画布大小: {map_size}x{map_size}, 缩放: {scale:.2f} px/单位")
+    print(f"[+] 渲染完成: {drawn} 个对象 → {output_path}", flush=True)
+    print(f"    范围: X [{min(xs):.0f}, {max(xs):.0f}]  Y [{min(ys):.0f}, {max(ys):.0f}]", flush=True)
 
 
 def fetch_via_bridge():
@@ -164,7 +154,7 @@ def main():
             output = sys.argv[idx + 1]
 
     if segments:
-        render_segments(segments, output)
+        render_points(segments, output)
 
 
 if __name__ == "__main__":
