@@ -35,33 +35,64 @@ OFFSETS = {
 }
 
 # ---------------------------------------------------------------------------
-# Memory primitives
+# Memory primitives — use C++ meccha-core.dll when available, fallback pymem
 # ---------------------------------------------------------------------------
+_USE_CORE = False
+try:
+    from meccha_chameleon_tools.memory_engine import (
+        init as _mc_init, cleanup as _mc_cleanup, attached as _mc_attached,
+        read_ptr as _mc_rp, read_u32 as _mc_ru32, read_u16 as _mc_ru16,
+        read_float as _mc_rf, read_double as _mc_rd,
+        write_float as _mc_wf, write_double as _mc_wd,
+        read_vec3 as _mc_rv3, read_vec3_f as _mc_rv3f,
+    )
+    _USE_CORE = _mc_init()
+except Exception:
+    pass
+
 def rp(pm, addr):
+    if _USE_CORE:
+        return _mc_rp(addr)
     try:
         return struct.unpack("<Q", pm.read_bytes(addr, 8))[0]
     except Exception:
         return 0
 
 def ru32(pm, addr):
+    if _USE_CORE:
+        return _mc_ru32(addr)
     try:
         return struct.unpack("<I", pm.read_bytes(addr, 4))[0]
     except Exception:
         return 0
 
 def ru16(pm, addr):
+    if _USE_CORE:
+        return _mc_ru16(addr)
     try:
         return struct.unpack("<H", pm.read_bytes(addr, 2))[0]
     except Exception:
         return 0
 
 def rfloat(pm, addr):
+    if _USE_CORE:
+        return _mc_rf(addr)
     try:
         return struct.unpack("<f", pm.read_bytes(addr, 4))[0]
     except Exception:
         return 0.0
 
+def rdouble(pm, addr):
+    if _USE_CORE:
+        return _mc_rd(addr)
+    try:
+        return struct.unpack("<d", pm.read_bytes(addr, 8))[0]
+    except Exception:
+        return 0.0
+
 def wfloat(pm, addr, value):
+    if _USE_CORE:
+        return _mc_wf(addr, value)
     try:
         pm.write_bytes(addr, struct.pack("<f", value), 4)
         return True
@@ -69,12 +100,16 @@ def wfloat(pm, addr, value):
         return False
 
 def rvec3(pm, addr):
+    if _USE_CORE:
+        return _mc_rv3(addr)
     try:
         return struct.unpack("<ddd", pm.read_bytes(addr, 24))
     except Exception:
         return (0.0, 0.0, 0.0)
 
 def rvec3_f(pm, addr):
+    if _USE_CORE:
+        return _mc_rv3f(addr)
     try:
         return struct.unpack("<fff", pm.read_bytes(addr, 12))
     except Exception:
