@@ -43,6 +43,13 @@ def rotation_to_axes(rot):
     return forward, right, up
 
 
+def cam_valid(cam):
+    return (cam and "loc" in cam and "rot" in cam and "fov" in cam and
+            all(math.isfinite(v) for v in cam["loc"]) and
+            all(math.isfinite(v) for v in cam["rot"]) and
+            math.isfinite(cam["fov"]) and cam["fov"] > 0)
+
+
 def w2s(world_pos, camera, screen_w, screen_h):
     """Project world pos to screen. Returns None if behind/outside/invalid."""
     try:
@@ -285,7 +292,8 @@ def draw_skeleton(painter, bone_positions, camera, screen_w, screen_h, color):
 
 def draw_radar(painter, cam, local_pos, players, radar_cx, radar_cy, radar_size, radar_range, color, opacity,
                terrain_segments=None, current_z=0.0):
-    """Draw a 2D radar overlay in the corner."""
+    if not cam_valid(cam) or not local_pos or not all(math.isfinite(v) for v in local_pos):
+        return
     half = radar_size / 2
     painter.setPen(QPen(QColor(255, 255, 255, opacity), 1))
     painter.setBrush(QBrush(QColor(0, 0, 0, opacity)))
@@ -1272,11 +1280,14 @@ class Overlay(QWidget):
             if not players:
                 return
 
-            # Cache bridge status; auto-inject if HV enabled but bridge dead
+            # Cache bridge status; auto-inject at most once per 30s
             self._hv_bridge_ok = ping_fast()
             if not self._hv_bridge_ok and self.esp is not None:
-                bg_ensure_bridge()
-                # Don't assume it's alive yet — next tick will check
+                now = time.time()
+                last = getattr(self, '_last_inject_attempt', 0.0)
+                if now - last > 30:
+                    self._last_inject_attempt = now
+                    bg_ensure_bridge()
 
             enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
             if not enemies:
@@ -1421,7 +1432,7 @@ class Overlay(QWidget):
             raw = self._cached_players
         all_players = list(raw)
 
-        if not cam:
+        if not cam or not cam_valid(cam):
             painter.setPen(QPen(QColor(255, 255, 255)))
             painter.drawText(10, 20, _tr("NO CAMERA"))
             self._rendering = False

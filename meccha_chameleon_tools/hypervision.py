@@ -102,11 +102,21 @@ def bg_stop_hv():
     _bg(lambda: _send("stop_hypervision", timeout=10))
 
 
+_injecting = False
+
 def bg_ensure_bridge():
-    """Auto-inject bridge DLL if game is running but bridge isn't alive."""
+    """Auto-inject bridge DLL once; no concurrent attempts."""
+    global _injecting
+    if _injecting:
+        return
+    _injecting = True
     def _w():
-        from meccha_chameleon_tools.camouflage import ensure_bridge_ready
-        ensure_bridge_ready()
+        global _injecting
+        try:
+            from meccha_chameleon_tools.camouflage import ensure_bridge_ready
+            ensure_bridge_ready()
+        finally:
+            _injecting = False
     _bg(_w)
 
 
