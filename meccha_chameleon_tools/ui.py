@@ -89,6 +89,51 @@ def clamp_screen(x, y, w, h, margin=10):
     return (max(margin, min(w - margin, x)), max(margin, min(h - margin, y)))
 
 
+def w2s_snap(world_pos, camera, screen_w, screen_h):
+    """Project world pos to screen for snap lines. Works even when player is behind camera."""
+    try:
+        cam_loc, cam_rot = camera["loc"], camera["rot"]
+        fov = camera.get("fov", 90)
+        if fov <= 0 or fov > 180:
+            return None
+        forward, right, up = rotation_to_axes(cam_rot)
+        dx = world_pos[0] - cam_loc[0]
+        dy = world_pos[1] - cam_loc[1]
+        dz = world_pos[2] - cam_loc[2]
+        if not (math.isfinite(dx) and math.isfinite(dy) and math.isfinite(dz)):
+            return None
+        view_x = dx * forward[0] + dy * forward[1] + dz * forward[2]
+        view_y = dx * right[0] + dy * right[1] + dz * right[2]
+        view_z = dx * up[0] + dy * up[1] + dz * up[2]
+
+        # For snap lines: if behind camera, mirror in front to get direction, then clamp to edge
+        behind = view_x <= 0.1
+        if behind:
+            view_x = max(0.1, abs(view_x))
+
+        tan_hfov = math.tan(math.radians(fov) / 2.0)
+        if tan_hfov <= 0.001:
+            return None
+        aspect = screen_w / max(1, screen_h)
+        ndc_x = view_y / (view_x * tan_hfov)
+        ndc_y = view_z / (view_x * tan_hfov / aspect)
+
+        if behind:
+            # Clamp to screen edge, keeping direction
+            ndc_x = max(-1.0, min(1.0, ndc_x))
+            ndc_y = max(-1.0, min(1.0, ndc_y))
+        elif abs(ndc_x) > 1.5 or abs(ndc_y) > 1.5:
+            return None
+
+        sx = (1.0 + ndc_x) * screen_w / 2.0
+        sy = (1.0 - ndc_y) * screen_h / 2.0
+        if behind:
+            sx, sy = clamp_screen(sx, sy, screen_w, screen_h)
+        return (sx, sy) if math.isfinite(sx) and math.isfinite(sy) else None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Key name mapping (shared between Menu and Overlay)
 # ---------------------------------------------------------------------------
@@ -1664,8 +1709,10 @@ class Overlay(QWidget):
                     draw_health_bar(painter, bar_x, bar_y, 24 * scale, 4, hp, sh if self.config.shield_bar else None)
 
             if self.config.snap_lines:
+                # Use w2s_snap for extreme angles (player behind camera)
+                snap_pos = w2s_snap(pos, cam, w, h) or screen_center
                 x0, y0 = int(w / 2), int(h)
-                x1, y1 = int(sx), int(sy)
+                x1, y1 = int(snap_pos[0]), int(snap_pos[1])
                 dx_, dy_ = x1 - x0, y1 - y0
                 dist_ = int(math.sqrt(dx_*dx_ + dy_*dy_))
                 if dist_ > 0:
