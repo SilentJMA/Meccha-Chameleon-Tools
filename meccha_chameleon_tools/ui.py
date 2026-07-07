@@ -1571,7 +1571,7 @@ class Overlay(QWidget):
                 if is_local:
                     label_parts.append(_tr("YOU"))
                 elif observer_abs:
-                    label_parts.append(_tr(role) if role != "Unknown" else _tr("Player {idx}", idx=idx))
+                    label_parts.append(_tr("Player {idx}", idx=idx))
                 elif is_unknown:
                     pass
                 elif is_enemy:

@@ -103,8 +103,13 @@ def main():
             config.language = detected
     _tr.set_language(config.language)
 
-    _boot_msg("Connecting to game (async)...")
+    _boot_msg("Connecting to game...")
     esp = None
+    try:
+        esp = MecchaESP()
+        _boot_msg("Game connected.")
+    except Exception:
+        _boot_msg("Game not found — will attach in background.")
 
     _boot_msg("Creating GUI...")
     menu = Menu(config, esp)
