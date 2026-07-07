@@ -80,58 +80,7 @@ def clamp_screen(x, y, w, h, margin=10):
     return (max(margin, min(w - margin, x)), max(margin, min(h - margin, y)))
 
 
-def clip_cs(x1, y1, x2, y2, w, h):
-    """Cohen-Sutherland line clipping to screen rect [0,w]x[0,h].
-    Returns (cx1,cy1,cx2,cy2) or None if entirely outside."""
-    INSIDE, LEFT, RIGHT, BOTTOM, TOP = 0, 1, 2, 4, 8
-    def outcode(x, y):
-        c = INSIDE
-        if x < 0: c |= LEFT
-        elif x > w: c |= RIGHT
-        if y < 0: c |= TOP
-        elif y > h: c |= BOTTOM
-        return c
-    dx, dy = x2 - x1, y2 - y1
-    ox1, oy1, ox2, oy2 = x1, y1, x2, y2
-    oc1, oc2 = outcode(x1, y1), outcode(x2, y2)
-    while True:
-        if not (oc1 | oc2):  # both inside
-            return (ox1, oy1, ox2, oy2)
-        if oc1 & oc2:  # both outside same region
-            return None
-        oc = oc1 or oc2
-        x, y = 0.0, 0.0
-        if oc & TOP: x = ox1 + dx * (0 - oy1) / dy; y = 0
-        elif oc & BOTTOM: x = ox1 + dx * (h - oy1) / dy; y = h
-        elif oc & RIGHT: y = oy1 + dy * (w - ox1) / dx; x = w
-        elif oc & LEFT: y = oy1 + dy * (0 - ox1) / dx; x = 0
-        if oc == oc1:
-            ox1, oy1, oc1 = x, y, outcode(x, y)
-        else:
-            ox2, oy2, oc2 = x, y, outcode(x, y)
-    return None
 
-def w2s_snap(world_pos, camera, screen_w, screen_h):
-    """Project world pos to screen. Same math as w2s. Returns None if behind camera."""
-    cam_loc = camera["loc"]
-    cam_rot = camera["rot"]
-    fov = camera["fov"]
-    forward, right, up = rotation_to_axes(cam_rot)
-    dx = world_pos[0] - cam_loc[0]
-    dy = world_pos[1] - cam_loc[1]
-    dz = world_pos[2] - cam_loc[2]
-    view_x = dx * forward[0] + dy * forward[1] + dz * forward[2]
-    view_y = dx * right[0] + dy * right[1] + dz * right[2]
-    view_z = dx * up[0] + dy * up[1] + dz * up[2]
-    if view_x <= 0.1:  # behind or at camera, no projection
-        return None
-    aspect = screen_w / screen_h
-    tan_hfov = math.tan(math.radians(fov) / 2.0)
-    ndc_x = view_y / (view_x * tan_hfov)
-    ndc_y = view_z / (view_x * tan_hfov / aspect)
-    sx = (1.0 + ndc_x) * screen_w / 2.0
-    sy = (1.0 - ndc_y) * screen_h / 2.0
-    return (sx, sy)
 
 
 # ---------------------------------------------------------------------------
@@ -1660,33 +1609,6 @@ class Overlay(QWidget):
             # Compute screen position (may be None for off-screen)
             screen_pos = w2s(pos, cam, w, h)
 
-            # Snap line: same w2s math as upstream, clip to screen with Cohen-Sutherland
-            no_role = not is_hunter and not is_survivor and not is_local
-            if self.config.snap_lines and not no_role:
-                snap_pos = w2s_snap(pos, cam, w, h)  # None if behind camera
-                if snap_pos:
-                    x0, y0 = float(w / 2), float(h)
-                    x1, y1 = snap_pos
-                    clipped = clip_cs(x0, y0, x1, y1, w, h)
-                    if clipped:
-                        cx1, cy1, cx2, cy2 = clipped
-                        dx_, dy_ = cx2 - cx1, cy2 - cy1
-                        dist_ = math.hypot(dx_, dy_)
-                        if dist_ > 0:
-                            if cm == "hybrid" and role_color:
-                                alt_qcolor = QColor(*role_color)
-                                theme = QColor(*color)
-                                for t in range(0, int(dist_), 8):
-                                    t2 = min(t + 8, int(dist_))
-                                    r1, r2 = t / dist_, t2 / dist_
-                                    px1 = int(cx1 + dx_ * r1); py1 = int(cy1 + dy_ * r1)
-                                    px2 = int(cx1 + dx_ * r2); py2 = int(cy1 + dy_ * r2)
-                                    painter.setPen(QPen(alt_qcolor if (t // 8) % 2 else theme, 1))
-                                    painter.drawLine(px1, py1, px2, py2)
-                            else:
-                                painter.setPen(QPen(QColor(*color), 1))
-                                painter.drawLine(int(cx1), int(cy1), int(cx2), int(cy2))
-
             # Skip on-screen rendering (dot/box/health/labels) if player is off-screen
             if not screen_pos:
                 continue
@@ -1694,6 +1616,11 @@ class Overlay(QWidget):
             sx, sy = screen_pos
             sy += self.config.box_y_offset
             is_invincible = pdata.get("_invincible", False) and self.config.invincible_detect and not is_local
+
+            # Snap line: bottom-center to player screen position (upstream reference logic)
+            if self.config.snap_lines:
+                painter.setPen(QPen(QColor(*color), 1))
+                painter.drawLine(int(w / 2), int(h), int(sx), int(sy))
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
 
