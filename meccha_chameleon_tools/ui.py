@@ -41,7 +41,7 @@ def rotation_to_axes(rot):
     sr, cr = math.sin(roll), math.cos(roll)
     forward = (cp * cy, cp * sy, sp)
     right = (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp)
-    up = (cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp)
+    up = (-(cr * sp * cy + sr * sy), cr * sp * sy - sr * cy, cr * cp)
     return forward, right, up
 
 
