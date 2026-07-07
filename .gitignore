@@ -45,6 +45,7 @@ walk_krl_children.py
 # Temp / scratch files
 *.txt
 *.tmp
+PR_SUMMARY.md
 
 # Files removed from version control
 .gitignore
