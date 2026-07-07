@@ -90,8 +90,9 @@ def clamp_screen(x, y, w, h, margin=10):
 
 
 def w2s_snap(world_pos, camera, screen_w, screen_h):
-    """Project world pos to screen for snap lines. Uses angle-based projection
-    that works correctly at ALL camera angles (no gimbal lock)."""
+    """Snap line projection. For front players: same as w2s.
+    For behind/edge players: mirror to front + clamp to screen edge.
+    Uses standard perspective formula at all angles (no angular gimbal lock)."""
     try:
         cam_loc, cam_rot = camera["loc"], camera["rot"]
         fov = camera.get("fov", 90)
@@ -104,39 +105,34 @@ def w2s_snap(world_pos, camera, screen_w, screen_h):
         if not (math.isfinite(dx) and math.isfinite(dy) and math.isfinite(dz)):
             return None
 
-        # Direction vector from camera to player (world space)
-        dir_len = math.hypot(dx, dy, dz)
-        if dir_len < 1:
+        view_x = dx * forward[0] + dy * forward[1] + dz * forward[2]
+        view_y = dx * right[0] + dy * right[1] + dz * right[2]
+        view_z = dx * up[0] + dy * up[1] + dz * up[2]
+
+        # For behind-camera / extreme-angle: mirror depth to keep correct screen direction
+        behind = view_x <= 0.1
+        if behind:
+            view_x = max(0.1, abs(view_x))
+
+        tan_hfov = math.tan(math.radians(fov) / 2.0)
+        if tan_hfov <= 0.001:
             return None
-        dx_n, dy_n, dz_n = dx / dir_len, dy / dir_len, dz / dir_len
-
-        # Project direction onto view axes
-        view_x = dx_n * forward[0] + dy_n * forward[1] + dz_n * forward[2]
-        view_y = dx_n * right[0] + dy_n * right[1] + dz_n * right[2]
-        view_z = dx_n * up[0] + dy_n * up[1] + dz_n * up[2]
-
-        # Compute azimuth (horizontal) and elevation (vertical) angles
-        # azimuth = angle from forward to right in horizontal plane
-        # elevation = angle from forward to up
-        az = math.atan2(view_y, view_x)  # radians, positive = right
-        el = math.atan2(view_z, view_x)  # radians, positive = up
-
-        # Normalize to NDC using FOV
-        hfov = math.radians(fov) / 2.0
         aspect = screen_w / max(1, screen_h)
-        ndc_x = az / hfov
-        ndc_y = el / (hfov / aspect)
+        ndc_x = view_y / (view_x * tan_hfov)
+        ndc_y = view_z / (view_x * tan_hfov / aspect)
 
-        # For extreme angles (behind camera), az/el wrap around but atan2 handles it
-        # Clamp to screen with margin
-        ndc_x = max(-1.2, min(1.2, ndc_x))
-        ndc_y = max(-1.2, min(1.2, ndc_y))
+        if behind:
+            ndc_x = max(-1.0, min(1.0, ndc_x))
+            ndc_y = max(-1.0, min(1.0, ndc_y))
+        elif abs(ndc_x) > 1.5 or abs(ndc_y) > 1.5:
+            return None
 
         sx = (1.0 + ndc_x) * screen_w / 2.0
         sy = (1.0 - ndc_y) * screen_h / 2.0
-        sx = max(5, min(screen_w - 5, sx))
-        sy = max(5, min(screen_h - 5, sy))
-        return (sx, sy)
+        if behind:
+            sx = max(5, min(screen_w - 5, sx))
+            sy = max(5, min(screen_h - 5, sy))
+        return (sx, sy) if math.isfinite(sx) and math.isfinite(sy) else None
     except Exception:
         return None
 
