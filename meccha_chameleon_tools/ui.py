@@ -1416,7 +1416,8 @@ class Overlay(QWidget):
             self._rendering = False
             return
 
-        if self.esp is None:
+        _esp = self.esp
+        if _esp is None:
             painter.setPen(QPen(QColor(180, 180, 180)))
             painter.drawText(10, 20, _tr("Waiting for game..."))
             painter.setPen(QPen(QColor(100, 100, 100)))
@@ -1425,8 +1426,10 @@ class Overlay(QWidget):
             return
 
         # Camera: read synchronously for pixel-accurate projection (fast, few reads)
-        _esp = self.esp
-        cam = _esp.get_camera() if _esp else None
+        try:
+            cam = _esp.get_camera()
+        except Exception:
+            cam = None
 
         # Players: from background thread cache (avoids freezing)
         with self._cache_lock:
@@ -1629,7 +1632,7 @@ class Overlay(QWidget):
 
         status_parts = []
         status_parts.append(_tr("Players: {count}", count=len(all_players)))
-        if _esp:
+        if cam:
             status_parts.append(_tr("Attached"))
         else:
             status_parts.append(_tr("Waiting..."))
