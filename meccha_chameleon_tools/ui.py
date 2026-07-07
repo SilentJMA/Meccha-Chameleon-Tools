@@ -1629,13 +1629,6 @@ class Overlay(QWidget):
                 scale = self.config.scale_reference_dist / d
                 scale = max(0.3, min(scale, 3.0))
 
-            screen_center = w2s(pos, cam, w, h)
-            if not screen_center:
-                continue
-
-            sx, sy = screen_center
-            sy += self.config.box_y_offset
-
             is_hunter = pdata.get("is_hunter", False)
             is_survivor = pdata.get("is_survivor", False)
             is_unknown = not role_detection_ok and not is_local and not is_enemy
@@ -1651,10 +1644,7 @@ class Overlay(QWidget):
             elif is_unknown:
                 base_color = self.config.unknown_color
             elif is_enemy:
-                if self.config.enemy_only:
-                    base_color = self.config.enemy_color  # visibility check moved to _reader_loop
-                else:
-                    base_color = self.config.enemy_color
+                base_color = self.config.enemy_color
             else:
                 base_color = self.config.teammate_color
 
@@ -1670,9 +1660,40 @@ class Overlay(QWidget):
             else:
                 color = base_color
 
-            # Invincible: use value from _reader_loop cache
-            is_invincible = pdata.get("_invincible", False) and self.config.invincible_detect and not is_local
+            # Compute screen position (may be None for off-screen)
+            screen_pos = w2s(pos, cam, w, h)
 
+            # Snap line: render for ALL players (on-screen or off) using angle-robust w2s_snap
+            no_role = not is_hunter and not is_survivor and not is_local
+            if self.config.snap_lines and not no_role:
+                snap_pos = w2s_snap(pos, cam, w, h)
+                if snap_pos:
+                    x0, y0 = int(w / 2), int(h)
+                    x1, y1 = int(snap_pos[0]), int(snap_pos[1])
+                    dx_, dy_ = x1 - x0, y1 - y0
+                    dist_ = int(math.sqrt(dx_*dx_ + dy_*dy_))
+                    if dist_ > 0:
+                        if cm == "hybrid" and role_color:
+                            alt_qcolor = QColor(*role_color)
+                            theme = QColor(*color)
+                            for t in range(0, dist_, 8):
+                                t2 = min(t + 8, dist_)
+                                r1, r2 = t / dist_, t2 / dist_
+                                px1 = int(x0 + dx_ * r1); py1 = int(y0 + dy_ * r1)
+                                px2 = int(x0 + dx_ * r2); py2 = int(y0 + dy_ * r2)
+                                painter.setPen(QPen(alt_qcolor if (t // 8) % 2 else theme, 1))
+                                painter.drawLine(px1, py1, px2, py2)
+                        else:
+                            painter.setPen(QPen(QColor(*color), 1))
+                            painter.drawLine(x0, y0, x1, y1)
+
+            # Skip on-screen rendering (dot/box/health/labels) if player is off-screen
+            if not screen_pos:
+                continue
+
+            sx, sy = screen_pos
+            sy += self.config.box_y_offset
+            is_invincible = pdata.get("_invincible", False) and self.config.invincible_detect and not is_local
             dsx, dsy = clamp_screen(sx, sy - self.config.box_y_offset, w, h)
             dsy += self.config.box_y_offset
 
@@ -1685,60 +1706,22 @@ class Overlay(QWidget):
 
             rot = pdata.get("_rot") if actor else None
             hw = self.config.box_height_world / 3.0
-            pen_width = max(1, self.config.line_thickness)
+            pw = max(1, self.config.line_thickness)
             if self.config.box_esp and not self.config.corner_box:
-                draw_2d_box(painter, pos, cam, w, h,
-                            self.config.box_height_world, hw, rot, color, scale, pen_width)
+                draw_2d_box(painter, pos, cam, w, h, self.config.box_height_world, hw, rot, color, scale, pw)
             if self.config.corner_box:
-                draw_corner_box(painter, pos, cam, w, h,
-                                self.config.box_height_world, hw, rot, color, scale, 0.25, pen_width)
+                draw_corner_box(painter, pos, cam, w, h, self.config.box_height_world, hw, rot, color, scale, 0.25, pw)
 
             if self.config.skeleton_esp and actor and not is_local:
-                bones = self.esp.get_skeleton_positions(actor)
+                bones = self.esp.get_skeleton_positions(actor) or self.esp.get_skeleton_positions_by_indices(actor, self.config.bone_indices)
                 if bones:
                     draw_skeleton(painter, bones, cam, w, h, self.config.skeleton_color)
-                else:
-                    indices = self.config.bone_indices
-                    bones2 = self.esp.get_skeleton_positions_by_indices(actor, indices)
-                    if bones2:
-                        draw_skeleton(painter, bones2, cam, w, h, self.config.skeleton_color)
 
             if self.config.health_bar or self.config.shield_bar:
-                health_info = pdata.get("_health_info")
-                if health_info and health_info[0] is not None:
-                    hp, sh = health_info
-                    bar_x = dsx - 12 * scale
-                    bar_y = dsy - 20 * scale
-                    draw_health_bar(painter, bar_x, bar_y, 24 * scale, 4, hp, sh if self.config.shield_bar else None)
-
-            # No snap line for ghost/unidentified players (no role)
-            no_role = not is_hunter and not is_survivor and not is_local
-            if self.config.snap_lines and not no_role:
-                # Use w2s_snap for extreme angles (player behind camera)
-                snap_pos = w2s_snap(pos, cam, w, h) or screen_center
-                x0, y0 = int(w / 2), int(h)
-                x1, y1 = int(snap_pos[0]), int(snap_pos[1])
-                dx_, dy_ = x1 - x0, y1 - y0
-                dist_ = int(math.sqrt(dx_*dx_ + dy_*dy_))
-                if dist_ > 0:
-                    if cm == "hybrid" and role_color:
-                        seg_len = 8
-                        alt_qcolor = QColor(*role_color)
-                        theme = QColor(*color)
-                        for t in range(0, dist_, seg_len):
-                            t2 = min(t + seg_len, dist_)
-                            ratio1 = t / dist_
-                            ratio2 = t2 / dist_
-                            px1 = int(x0 + dx_ * ratio1)
-                            py1 = int(y0 + dy_ * ratio1)
-                            px2 = int(x0 + dx_ * ratio2)
-                            py2 = int(y0 + dy_ * ratio2)
-                            alt = (t // seg_len) % 2
-                            painter.setPen(QPen(alt_qcolor if alt else theme, 1))
-                            painter.drawLine(px1, py1, px2, py2)
-                    else:
-                        painter.setPen(QPen(QColor(*color), 1))
-                        painter.drawLine(x0, y0, x1, y1)
+                hi = pdata.get("_health_info")
+                if hi and hi[0] is not None:
+                    hp, sh = hi
+                    draw_health_bar(painter, dsx - 12 * scale, dsy - 20 * scale, 24 * scale, 4, hp, sh if self.config.shield_bar else None)
 
             label_parts = []
             if self.config.show_names:
@@ -1794,9 +1777,8 @@ class Overlay(QWidget):
                 painter.setPen(QPen(QColor(150, 255, 150)))
                 painter.drawText(w - 200, 60, _tr("Items: {count}", count=actor_count))
 
-        non_local = [p for p in all_players if not p.get("is_local", False)]
         status_parts = []
-        status_parts.append(_tr("Players: {count}", count=len(non_local)))
+        status_parts.append(_tr("Players: {count}", count=len(all_players)))
         if self.esp:
             status_parts.append(_tr("Attached"))
         else:
