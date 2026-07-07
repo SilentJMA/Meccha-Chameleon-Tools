@@ -41,7 +41,7 @@ def rotation_to_axes(rot):
     sr, cr = math.sin(roll), math.cos(roll)
     forward = (cp * cy, cp * sy, sp)
     right = (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp)
-    up = (-(cr * sp * cy + sr * sy), cr * sp * sy - sr * cy, cr * cp)
+    up = (-(cr * sp * cy + sr * sy), cy * sr - cr * sp * cy, cr * cp)
     return forward, right, up
 
 
@@ -53,35 +53,26 @@ def cam_valid(cam):
 
 
 def w2s(world_pos, camera, screen_w, screen_h):
-    """Project world pos to screen. Returns None if behind/outside/invalid."""
-    try:
-        cam_loc, cam_rot = camera["loc"], camera["rot"]
-        fov = camera.get("fov", 90)
-        if fov <= 0 or fov > 180:
-            return None
-        forward, right, up = rotation_to_axes(cam_rot)
-        dx = world_pos[0] - cam_loc[0]
-        dy = world_pos[1] - cam_loc[1]
-        dz = world_pos[2] - cam_loc[2]
-        if not (math.isfinite(dx) and math.isfinite(dy) and math.isfinite(dz)):
-            return None
-        view_x = dx * forward[0] + dy * forward[1] + dz * forward[2]
-        view_y = dx * right[0] + dy * right[1] + dz * right[2]
-        view_z = dx * up[0] + dy * up[1] + dz * up[2]
-        if view_x <= 0.1:
-            return None
-        tan_hfov = math.tan(math.radians(fov) / 2.0)
-        if tan_hfov <= 0.001:
-            return None
-        ndc_x = view_y / (view_x * tan_hfov)
-        ndc_y = view_z / (view_x * tan_hfov / (screen_w / max(1, screen_h)))
-        if abs(ndc_x) > 1.5 or abs(ndc_y) > 1.5:
-            return None
-        sx = (1.0 + ndc_x) * screen_w / 2.0
-        sy = (1.0 - ndc_y) * screen_h / 2.0
-        return (sx, sy) if math.isfinite(sx) and math.isfinite(sy) else None
-    except Exception:
+    """Project world pos to screen. Returns None only if behind camera."""
+    cam_loc = camera["loc"]
+    cam_rot = camera["rot"]
+    fov = camera["fov"]
+    forward, right, up = rotation_to_axes(cam_rot)
+    dx = world_pos[0] - cam_loc[0]
+    dy = world_pos[1] - cam_loc[1]
+    dz = world_pos[2] - cam_loc[2]
+    view_x = dx * forward[0] + dy * forward[1] + dz * forward[2]
+    view_y = dx * right[0] + dy * right[1] + dz * right[2]
+    view_z = dx * up[0] + dy * up[1] + dz * up[2]
+    if view_x <= 0.1:
         return None
+    aspect = screen_w / screen_h
+    tan_hfov = math.tan(math.radians(fov) / 2.0)
+    ndc_x = view_y / (view_x * tan_hfov)
+    ndc_y = view_z / (view_x * tan_hfov / aspect)
+    screen_x = (1.0 + ndc_x) * screen_w / 2.0
+    screen_y = (1.0 - ndc_y) * screen_h / 2.0
+    return (screen_x, screen_y)
 
 
 def clamp_screen(x, y, w, h, margin=10):
