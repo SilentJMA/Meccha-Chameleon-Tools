@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Config dataclass with JSON save/load persistence."""
 import json
 import os
 from dataclasses import dataclass, field, asdict
 from typing import Tuple, List
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "esp_config.json")
+CONFIG_FILE = os.path.join(
+    os.environ.get("APPDATA", os.path.expanduser("~")), "MecchaCamouflage", "esp_config.json"
+)
 
 
 @dataclass
 class Config:
     # Language (EN, DE, FR, ES, CN, JP, KR)
     language: str = "EN"
+
+    # Color mode: "relative" | "absolute"
+    color_mode: str = "relative"
 
     # ESP basics
     enabled: bool = True
@@ -27,9 +31,22 @@ class Config:
     team_filter: bool = False
     enemy_only: bool = False
 
-    # Colors
+    # Performance
+    esp_fps: int = 30
+
+    # Team-based colors
     enemy_color: Tuple[int, int, int] = (255, 0, 0)
+    teammate_color: Tuple[int, int, int] = (255, 255, 0)
     local_color: Tuple[int, int, int] = (0, 255, 0)
+    unknown_color: Tuple[int, int, int] = (0, 80, 180)
+
+    # Role-based colors (override enemy_color per role when color_by_role is on)
+    hunter_visual_color: Tuple[int, int, int] = (255, 60, 60)
+    survivor_visual_color: Tuple[int, int, int] = (60, 180, 255)
+    hunter_esp: bool = True
+    survivor_esp: bool = True
+
+    # Other colors
     skeleton_color: Tuple[int, int, int] = (0, 255, 255)
     box_color: Tuple[int, int, int] = (255, 255, 255)
     radar_color: Tuple[int, int, int] = (255, 255, 255)
@@ -37,11 +54,11 @@ class Config:
     not_visible_color: Tuple[int, int, int] = (128, 0, 128)
     invincible_color: Tuple[int, int, int] = (255, 215, 0)
 
-    # Per-role colors (override enemy_color per role)
-    hunter_visual_color: Tuple[int, int, int] = (255, 60, 60)
-    survivor_visual_color: Tuple[int, int, int] = (60, 180, 255)
-    hunter_esp: bool = True
-    survivor_esp: bool = True
+    # Filter: check to hide that category
+    filter_hide_enemy: bool = False
+    filter_hide_self: bool = False
+    filter_hide_teammate: bool = False
+    filter_hide_unknown: bool = False
 
     # Sizing
     dot_radius: int = 8
@@ -105,10 +122,8 @@ class Config:
     # Camouflage
     camouflage_enabled: bool = False
     camouflage_status: str = "Ready"
-    # Paint mode: Single / Packed / Fast
     paint_mode: str = "Packed"
     paint_speed: float = 5.0
-    # Paint geometry settings
     stroke_size_texels: float = 9.0
     coverage_step_texels: float = 9.0
     stroke_delay_ms: int = 100
@@ -117,27 +132,36 @@ class Config:
     server_batch_limit: int = 50
     server_batch_delay_ms: int = 150
     adaptive_batching: bool = False
-    # Material settings
     auto_material: bool = False
     metallic: float = 0.0
     roughness: float = 1.0
-    # Region modes
     front_region_mode: str = "fill"
     side_region_mode: str = "paint"
     back_region_mode: str = "paint"
-    # Fill
     fill_color: str = "#FFFFFF"
     fill_metallic: float = 1.0
     fill_roughness: float = 0.0
-    # Hotkeys
     paint_hotkey: str = "F10"
     stop_hotkey: str = "F9"
-    # Process
     game_process_name: str = "PenguinHotel-Win64-Shipping.exe"
+
+    # #HyperVision (disabled — not functional in current release)
+    # hypervision_enabled: bool = False
+    # hv_mode: str = "auto"
+    # hv_path_count: int = 3
+    # hv_show_paths: bool = True
+    # hv_show_3d: bool = True
+    # hv_show_exposure: bool = True
+    # hv_quality: str = "high"
+
+    # Radar terrain
+    radar_terrain: bool = False
+    radar_z_level: int = 0
+
+    # Game directory
     game_directory: str = r"C:\Program Files (x86)\Steam\steamapps\common\MECCA CHAMELEON\Chameleon\Binaries\Win64"
 
     # Bone indices (fallback if name resolution fails)
-    # Common UE5 mannequin bone indices
     bone_indices: dict = field(default_factory=lambda: {
         "head": 66, "neck_01": 65, "spine_03": 52,
         "spine_02": 36, "spine_01": 5, "pelvis": 1,
@@ -150,27 +174,37 @@ class Config:
 
 def config_to_dict(config: Config) -> dict:
     d = asdict(config)
-    # Convert tuples to lists for JSON
-    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color", "visible_color", "not_visible_color", "invincible_color", "hunter_visual_color", "survivor_visual_color"):
+    for key in ("enemy_color", "teammate_color", "local_color", "unknown_color",
+                 "skeleton_color", "box_color", "radar_color", "visible_color",
+                 "not_visible_color", "invincible_color",
+                 "hunter_visual_color", "survivor_visual_color"):
         d[key] = list(d[key])
     return d
 
 
 def config_from_dict(d: dict) -> Config:
-    # Convert lists back to tuples
-    for key in ("enemy_color", "local_color", "skeleton_color", "box_color", "radar_color", "visible_color", "not_visible_color", "invincible_color", "hunter_visual_color", "survivor_visual_color"):
+    for key in ("enemy_color", "teammate_color", "local_color", "unknown_color",
+                 "skeleton_color", "box_color", "radar_color", "visible_color",
+                 "not_visible_color", "invincible_color",
+                 "hunter_visual_color", "survivor_visual_color"):
         if key in d and isinstance(d[key], list):
             d[key] = tuple(d[key])
-    # Flatten bone_indices if stored as list of pairs
     if "bone_indices" in d and isinstance(d["bone_indices"], list):
         d["bone_indices"] = {k: v for k, v in d["bone_indices"]}
+    if "color_mode" in d:
+        cm = d["color_mode"]
+        if cm in ("team", "hybrid"):
+            d["color_mode"] = "relative"
+        elif cm == "role":
+            d["color_mode"] = "absolute"
     return Config(**d)
 
 
 def save_config(config: Config, path: str = CONFIG_FILE):
     try:
         d = config_to_dict(config)
-        with open(path, "w") as f:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(d, f, indent=2)
         return True
     except Exception:
@@ -182,7 +216,7 @@ def load_config(path: str = CONFIG_FILE) -> Config:
     if not os.path.exists(path):
         return config
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = json.load(f)
         return config_from_dict(d)
     except Exception:

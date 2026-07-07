@@ -9,6 +9,7 @@ import math
 import os
 import sys
 import json
+import time
 import pymem
 import ctypes
 import subprocess as _subprocess
@@ -34,33 +35,64 @@ OFFSETS = {
 }
 
 # ---------------------------------------------------------------------------
-# Memory primitives
+# Memory primitives — use C++ meccha-core.dll when available, fallback pymem
 # ---------------------------------------------------------------------------
+_USE_CORE = False
+try:
+    from meccha_chameleon_tools.memory_engine import (
+        init as _mc_init, cleanup as _mc_cleanup, attached as _mc_attached,
+        read_ptr as _mc_rp, read_u32 as _mc_ru32, read_u16 as _mc_ru16,
+        read_float as _mc_rf, read_double as _mc_rd,
+        write_float as _mc_wf, write_double as _mc_wd,
+        read_vec3 as _mc_rv3, read_vec3_f as _mc_rv3f,
+    )
+    _USE_CORE = _mc_init()
+except Exception:
+    pass
+
 def rp(pm, addr):
+    if _USE_CORE:
+        return _mc_rp(addr)
     try:
         return struct.unpack("<Q", pm.read_bytes(addr, 8))[0]
     except Exception:
         return 0
 
 def ru32(pm, addr):
+    if _USE_CORE:
+        return _mc_ru32(addr)
     try:
         return struct.unpack("<I", pm.read_bytes(addr, 4))[0]
     except Exception:
         return 0
 
 def ru16(pm, addr):
+    if _USE_CORE:
+        return _mc_ru16(addr)
     try:
         return struct.unpack("<H", pm.read_bytes(addr, 2))[0]
     except Exception:
         return 0
 
 def rfloat(pm, addr):
+    if _USE_CORE:
+        return _mc_rf(addr)
     try:
         return struct.unpack("<f", pm.read_bytes(addr, 4))[0]
     except Exception:
         return 0.0
 
+def rdouble(pm, addr):
+    if _USE_CORE:
+        return _mc_rd(addr)
+    try:
+        return struct.unpack("<d", pm.read_bytes(addr, 8))[0]
+    except Exception:
+        return 0.0
+
 def wfloat(pm, addr, value):
+    if _USE_CORE:
+        return _mc_wf(addr, value)
     try:
         pm.write_bytes(addr, struct.pack("<f", value), 4)
         return True
@@ -68,12 +100,16 @@ def wfloat(pm, addr, value):
         return False
 
 def rvec3(pm, addr):
+    if _USE_CORE:
+        return _mc_rv3(addr)
     try:
         return struct.unpack("<ddd", pm.read_bytes(addr, 24))
     except Exception:
         return (0.0, 0.0, 0.0)
 
 def rvec3_f(pm, addr):
+    if _USE_CORE:
+        return _mc_rv3f(addr)
     try:
         return struct.unpack("<fff", pm.read_bytes(addr, 12))
     except Exception:
@@ -106,6 +142,12 @@ def dist(a, b):
     return math.sqrt(
         (a[0] - b[0]) ** 2 +
         (a[1] - b[1]) ** 2 +
+        (a[2] - b[2]) ** 2
+    )
+
+def dist_2d(a, b):
+    return math.sqrt(
+        (a[0] - b[0]) ** 2 +
         (a[2] - b[2]) ** 2
     )
 
@@ -610,10 +652,11 @@ class MecchaESP:
     def _detect_role(self, pawn):
         """Return ('Hunter', True, False) or ('Survivor', False, True) or ('Unknown', False, False)."""
         try:
-            name = self.objects.class_name(pawn)
-            if "Hunter" in name:
+            name = self.objects.class_name(pawn) or ""
+            name_lower = name.lower()
+            if "hunter" in name_lower:
                 return "Hunter", True, False
-            if "Survivor" in name:
+            if "survivor" in name_lower:
                 return "Survivor", False, True
         except Exception:
             pass
@@ -685,6 +728,10 @@ class MecchaESP:
             except Exception:
                 continue
 
+    # Terrain scanning disabled (not functional)
+    # def scan_terrain(self, ...):
+    #     pass
+
     def _is_visible(self, actor):
         """Approximate visibility check: read body/sphere visibility flag if available."""
         try:
@@ -706,6 +753,20 @@ class MecchaESP:
             pass
         return True
 
+    def _find_spectate_target(self, cam_pos, players_list):
+        if not cam_pos or (cam_pos[0] == 0 and cam_pos[1] == 0 and cam_pos[2] == 0):
+            return None
+        best_idx = None
+        best_dist = 999999.0
+        for i, (pawn, ps, pos) in enumerate(players_list):
+            if not pos:
+                continue
+            d = dist_2d(cam_pos, pos)
+            if d < best_dist:
+                best_dist = d
+                best_idx = i
+        return best_idx
+
     # ------
     def iter_players(self, include_local=True, team_filter=False, enemy_only=False):
         world = self._get_world()
@@ -717,37 +778,75 @@ class MecchaESP:
         pa_data, pa_count, _ = read_array(self.pm, gs + self.offsets["AGameStateBase::PlayerArray"])
         if not pa_data or pa_count == 0:
             return
-        local_pc = self._get_local_controller(world)
         local_pawn = 0
-        if local_pc:
-            local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
-        local_role, local_is_hunter, local_is_survivor = "Unknown", False, False
-        if local_pawn:
-            local_role, local_is_hunter, local_is_survivor = self._detect_role(local_pawn)
+        try:
+            local_pc = self._get_local_controller(world)
+            if local_pc:
+                local_pawn = rp(self.pm, local_pc + self.offsets["APlayerController::AcknowledgedPawn"])
+        except Exception:
+            pass
+        local_cam = self.get_camera()
+        cam_pos = local_cam["loc"] if local_cam else None
+        raw_players = []
         seen = set()
         for i in range(pa_count):
-            ps = rp(self.pm, pa_data + i * 8)
-            if not ps or ps in seen:
+            try:
+                ps = rp(self.pm, pa_data + i * 8)
+                if not ps or ps in seen:
+                    continue
+                seen.add(ps)
+                pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
+                if not pawn:
+                    continue
+                pos = self.get_actor_root_pos(pawn)
+                if pos is None:
+                    continue
+            except Exception:
                 continue
-            seen.add(ps)
-            pawn = rp(self.pm, ps + self.offsets["APlayerState::PawnPrivate"])
-            if not pawn:
-                continue
+            raw_players.append((pawn, ps, pos))
+        ref_is_hunter, ref_is_survivor = False, False
+        is_spectating = False
+        try:
+            if local_pawn:
+                local_class = self.objects.class_name(local_pawn) or ""
+                # If spectating (pawn class has 'Spectate'), find nearest real player for reference
+                if "Spectate" in local_class and raw_players:
+                    spec_idx = self._find_spectate_target(cam_pos, raw_players) if cam_pos else 0
+                    if spec_idx is None and raw_players:
+                        spec_idx = 0
+                    if spec_idx is not None:
+                        spec_pawn = raw_players[spec_idx][0]
+                        _, ref_is_hunter, ref_is_survivor = self._detect_role(spec_pawn)
+                        is_spectating = True
+                else:
+                    _, ref_is_hunter, ref_is_survivor = self._detect_role(local_pawn)
+            elif raw_players:
+                spec_idx = self._find_spectate_target(cam_pos, raw_players) if cam_pos else 0
+                if spec_idx is None and raw_players:
+                    spec_idx = 0
+                if spec_idx is not None:
+                    spec_pawn = raw_players[spec_idx][0]
+                    _, ref_is_hunter, ref_is_survivor = self._detect_role(spec_pawn)
+                    is_spectating = True
+        except Exception:
+            pass
+        for i, (pawn, ps, pos) in enumerate(raw_players):
             if not include_local and pawn == local_pawn:
-                continue
-            pos = self.get_actor_root_pos(pawn)
-            if pos is None:
                 continue
             role, is_hunter, is_survivor = self._detect_role(pawn)
             is_enemy = False
-            if local_is_hunter and is_survivor:
-                is_enemy = True
-            elif local_is_survivor and is_hunter:
-                is_enemy = True
+            if is_hunter or is_survivor:
+                if ref_is_hunter and is_survivor:
+                    is_enemy = True
+                elif ref_is_survivor and is_hunter:
+                    is_enemy = True
             if enemy_only and not is_enemy:
+                continue
+            if cam_pos and dist(cam_pos, pos) > 50000:
                 continue
             yield {
                 "is_local": pawn == local_pawn,
+                "is_spectating": is_spectating,
                 "pos": pos,
                 "actor": pawn,
                 "player_state": ps,
@@ -836,6 +935,24 @@ class MecchaESP:
             return {"success": False}
         finally:
             s.close()
+
+    def is_process_alive(self):
+        """Return True if the attached game process is still running."""
+        try:
+            pid = self.pm.process_id
+            if not pid:
+                return False
+            handle = ctypes.windll.kernel32.OpenProcess(
+                0x400, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_uint32(0)
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return exit_code.value == 259  # STILL_ACTIVE
+        except Exception:
+            return False
 
     def cleanup(self):
         proc = getattr(self, "_bridge_proc", None)

@@ -45,6 +45,7 @@ walk_krl_children.py
 # Temp / scratch files
 *.txt
 *.tmp
+PR_SUMMARY.md
 
 # Files removed from version control
 .gitignore
@@ -87,6 +88,7 @@ AGENTS.md
 
 # Old binaries distributed via releases, not tracked
 Meccha Chameleon Tools.exe
+preview.png
 
 # Old patch scripts (no longer needed)
 _patch_bridge.py
@@ -95,3 +97,9 @@ patch_remaining.py
 
 # Demo media (too large for repo)
 demo.mp4
+
+# Untracked native binaries (use native/ dir instead)
+meccha_chameleon_tools/runtime-bridge.dll
+meccha_chameleon_tools/runtime-injector.exe
+meccha_chameleon_tools/meccha-core.dll
+meccha_chameleon_tools/meccha-overlay.exe

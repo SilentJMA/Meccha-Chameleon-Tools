@@ -1,15 +1,6 @@
-<div align="center">
-
-<img width="1582" height="1092" alt="image" src="https://github.com/user-attachments/assets/e0dbeffe-b591-4bf5-9fc0-0f047a545c3d" />
-
 # Meccha Chameleon Tools
 
 External ESP · Aimbot · Radar · Player Mod for MECCA CHAMELEON (UE5)
-
-<img width="1213" height="793" alt="Image" src="https://github.com/user-attachments/assets/512aafbb-8199-42e5-9313-f28249306a02" />
-
-https://github.com/user-attachments/assets/67d8e647-faf3-4532-b37a-497cb9e0d375
-</div>
 
 ---
 
@@ -138,18 +129,30 @@ Camouflage     → loader-based bridge injection (port 50262) for mesh painting
 
 ## Changelog
 
-### v1.9.0-beta — Current Release
+### v1.9.0-wow — Async Rendering, C++ Memory Engine, Team Colors
+- **Async rendering** — game data reads moved to background thread, paintEvent reads from cache
+- **C++ memory engine** — optional meccha-core.dll, falls back to pymem if unavailable
+- **Two color modes** — Relative Team (enemy/ally) and Absolute Team (hunter/survivor)
+- **Auto-reconnect** — tool starts without game, attaches on process detection, reconnects on restart
+- **Observer mode** — automatic absolute coloring when local player has no role
+- **Ghost filtering** — players without detectable role are skipped
+- **Filter Config dialog** — hide Enemy/Self/Teammate/Unknown by category
+- **Configurable ESP FPS** — 10-60 slider in ESP tab
+- **System tray icon** — show/hide menu, quit
+- **Single instance enforcement** — prevents duplicate processes
+- **Invincible detection** — gold X marker on immune players
+- **Startup diagnostic console** — auto-closes when GUI is ready
+- **System language detection** — auto-detect on first launch
+- **Logger module** — file + verbose console logging via `--verbose`
+- **94 regression tests** — projection math coverage
+- **Build script** — auto lock-process termination
+- All 7 languages at 100% translation coverage
+
+### v1.9.0-beta — Upstream Release
 - Camouflage tab reworked with lighter bridge system (loader-based injection, port 50262)
 - Simplified camouflage UI (Start/Stop/Review/Unreview)
 - Native files restructured into `native/` subdirectory
 - Removed dependency on external controller EXE — Python handles injection directly
-
-### v1.8.1-beta
-- Camouflage tab added (disabled by default — in development)
-- Multi-language support (7 languages)
-- Coherent dark theme with styled combo box popup, sliders, scrollbars
-- Language switch fix — outer layout kept permanent to prevent blank window on rebuild
-- Cleaned up color picker remnants, old camouflage code
 
 ### v1.8.0 — Role detection, enemy filter, corner box
 - Role detection (Hunter/Survivor), enemy-only filter, Show Roles toggle
