@@ -14,8 +14,8 @@ class Config:
     # Language (EN, DE, FR, ES, CN, JP, KR)
     language: str = "EN"
 
-    # Color mode: "team" | "role" | "hybrid"
-    color_mode: str = "hybrid"
+    # Color mode: "relative" | "absolute"
+    color_mode: str = "relative"
 
     # ESP basics
     enabled: bool = True
@@ -145,14 +145,14 @@ class Config:
     stop_hotkey: str = "F9"
     game_process_name: str = "PenguinHotel-Win64-Shipping.exe"
 
-    # HyperVision
-    hypervision_enabled: bool = False
-    hv_mode: str = "auto"
-    hv_path_count: int = 3
-    hv_show_paths: bool = True
-    hv_show_3d: bool = True
-    hv_show_exposure: bool = True
-    hv_quality: str = "high"
+    # #HyperVision (disabled — not functional in current release)
+    # hypervision_enabled: bool = False
+    # hv_mode: str = "auto"
+    # hv_path_count: int = 3
+    # hv_show_paths: bool = True
+    # hv_show_3d: bool = True
+    # hv_show_exposure: bool = True
+    # hv_quality: str = "high"
 
     # Radar terrain
     radar_terrain: bool = False
@@ -191,6 +191,12 @@ def config_from_dict(d: dict) -> Config:
             d[key] = tuple(d[key])
     if "bone_indices" in d and isinstance(d["bone_indices"], list):
         d["bone_indices"] = {k: v for k, v in d["bone_indices"]}
+    if "color_mode" in d:
+        cm = d["color_mode"]
+        if cm in ("team", "hybrid"):
+            d["color_mode"] = "relative"
+        elif cm == "role":
+            d["color_mode"] = "absolute"
     return Config(**d)
 
 

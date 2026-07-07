@@ -974,6 +974,24 @@ class MecchaESP:
         finally:
             s.close()
 
+    def is_process_alive(self):
+        """Return True if the attached game process is still running."""
+        try:
+            pid = self.pm.process_id
+            if not pid:
+                return False
+            handle = ctypes.windll.kernel32.OpenProcess(
+                0x400, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_uint32(0)
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return exit_code.value == 259  # STILL_ACTIVE
+        except Exception:
+            return False
+
     def cleanup(self):
         proc = getattr(self, "_bridge_proc", None)
         if proc and proc.poll() is None:

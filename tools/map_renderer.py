@@ -86,17 +86,17 @@ def render_points(points, output_path, map_size=4096):
     print(f"    范围: X [{min(xs):.0f}, {max(xs):.0f}]  Y [{min(ys):.0f}, {max(ys):.0f}]", flush=True)
 
 
-def fetch_via_bridge():
-    from meccha_chameleon_tools.hypervision import _send
-    print("[*] Bridge DLL scan_terrain...")
-    r = _send("scan_terrain", {"center": [0, 0, 0], "range_xy": 50000,
-                                "z_samples": 1, "z_range": 2000}, timeout=10)
-    if r.get("success") and "segments" in r.get("metadata", {}):
-        segs = r["metadata"]["segments"]
-        print(f"[+] bridge returns {len(segs)} segs")
-        return [(s[0], s[1], s[2], s[3], s[4], s[5]) for s in segs]
-    print("[!] bridge not available")
-    return None
+# def fetch_via_bridge():
+#     from meccha_chameleon_tools.hypervision import _send
+#     print("[*] Bridge DLL scan_terrain...")
+#     r = _send("scan_terrain", {"center": [0, 0, 0], "range_xy": 50000,
+#                                 "z_samples": 1, "z_range": 2000}, timeout=10)
+#     if r.get("success") and "segments" in r.get("metadata", {}):
+#         segs = r["metadata"]["segments"]
+#         print(f"[+] bridge returns {len(segs)} segs")
+#         return [(s[0], s[1], s[2], s[3], s[4], s[5]) for s in segs]
+#     print("[!] bridge not available")
+#     return None
 
 
 def fetch_via_python():

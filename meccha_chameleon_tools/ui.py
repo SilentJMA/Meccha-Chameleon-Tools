@@ -26,9 +26,10 @@ from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
 from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, paint_start, paint_single, stop_paint, is_bridge_alive, send_preview, send_unpreview
 from meccha_chameleon_tools import logger as log
-from meccha_chameleon_tools.hypervision import (ping_fast, bg_scan_terrain, bg_visibility_scan,
-                                                  bg_path_find, bg_start_hv, bg_update_hv, bg_stop_hv,
-                                                  bg_ensure_bridge, simplify_segments)
+# HyperVision disabled — not functional in current release
+# from meccha_chameleon_tools.hypervision import (ping_fast, bg_scan_terrain, bg_visibility_scan,
+#                                                   bg_path_find, bg_start_hv, bg_update_hv, bg_stop_hv,
+#                                                   bg_ensure_bridge, simplify_segments)
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ def rotation_to_axes(rot):
     sr, cr = math.sin(roll), math.cos(roll)
     forward = (cp * cy, cp * sy, sp)
     right = (sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp)
-    up = (-(cr * sp * cy + sr * sy), cy * sr - cr * sp * cy, cr * cp)
+    up = (-(cr * sp * cy + sr * sy), sr * cy - cr * sp * sy, cr * cp)
     return forward, right, up
 
 
@@ -78,6 +79,15 @@ def w2s(world_pos, camera, screen_w, screen_h):
 def clamp_screen(x, y, w, h, margin=10):
     """Clamp coordinates within visible area (with margin)."""
     return (max(margin, min(w - margin, x)), max(margin, min(h - margin, y)))
+
+
+def norm_color_mode(cm):
+    """Normalize color_mode from config (handles old values)."""
+    if cm in ("team", "hybrid"):
+        return "relative"
+    if cm == "role":
+        return "absolute"
+    return cm if cm in ("relative", "absolute") else "relative"
 
 
 
@@ -787,10 +797,11 @@ class Menu(QWidget):
         lo.addWidget(hdr3)
         lo.addWidget(QLabel(_tr("Color Mode:")))
         self.cmb_color_mode = QComboBox()
-        cm_labels = {"team": "Team", "role": "Role", "hybrid": "Hybrid"}
-        self.cmb_color_mode.addItems([_tr(l) for l in ["Team", "Role", "Hybrid"]])
+        cm_labels = {"relative": "Relative Team", "absolute": "Absolute Team"}
+        self.cmb_color_mode.addItems([_tr(l) for l in ["Relative Team", "Absolute Team"]])
         cm_codes = list(cm_labels.keys())
-        self.cmb_color_mode.setCurrentIndex(cm_codes.index(self.config.color_mode) if self.config.color_mode in cm_codes else 2)
+        norm_cm = norm_color_mode(self.config.color_mode)
+        self.cmb_color_mode.setCurrentIndex(cm_codes.index(norm_cm) if norm_cm in cm_codes else 0)
         self.cmb_color_mode.currentIndexChanged.connect(lambda idx: setattr(self.config, "color_mode", cm_codes[idx]))
         lo.addWidget(self.cmb_color_mode)
         lr = QHBoxLayout()
@@ -809,33 +820,34 @@ class Menu(QWidget):
         self.spn_point.valueChanged.connect(lambda v: setattr(self.config, "point_size", v))
         pr.addWidget(self.spn_point)
         lo.addLayout(pr)
-        hvsep = QFrame()
-        hvsep.setFrameShape(QFrame.HLine)
-        hvsep.setStyleSheet("color: #2a2a3e;")
-        lo.addWidget(hvsep)
-        hvhdr = QLabel(_tr("HYPERVISION"))
-        hvhdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hvhdr)
-        self.cb_hv = self._chk(_tr("HyperVision Enabled"), "hypervision_enabled")
-        lo.addWidget(self.cb_hv)
-        self.cb_hv_paths = self._chk(_tr("Show Paths"), "hv_show_paths")
-        self.cb_hv_exposure = self._chk(_tr("Show Exposure Volume"), "hv_show_exposure")
-        lo.addWidget(self.cb_hv_paths)
-        lo.addWidget(self.cb_hv_exposure)
+        # #HyperVision section disabled (not functional)
+        # hvsep = QFrame()
+        # hvsep.setFrameShape(QFrame.HLine)
+        # hvsep.setStyleSheet("color: #2a2a3e;")
+        # lo.addWidget(hvsep)
+        # hvhdr = QLabel(_tr("HYPERVISION"))
+        # hvhdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
+        # lo.addWidget(hvhdr)
+        # self.cb_hv = self._chk(_tr("HyperVision Enabled"), "hypervision_enabled")
+        # lo.addWidget(self.cb_hv)
+        # self.cb_hv_paths = self._chk(_tr("Show Paths"), "hv_show_paths")
+        # self.cb_hv_exposure = self._chk(_tr("Show Exposure Volume"), "hv_show_exposure")
+        # lo.addWidget(self.cb_hv_paths)
+        # lo.addWidget(self.cb_hv_exposure)
         self.cb_terrain = self._chk(_tr("Radar Terrain"), "radar_terrain")
         lo.addWidget(self.cb_terrain)
-        self.cb_hv_paths_3d = self._chk(_tr("Show 3D Nav Lines"), "hv_show_3d")
-        lo.addWidget(self.cb_hv_paths_3d)
-        qr = QHBoxLayout()
-        qr.addWidget(QLabel(_tr("Scan Quality:")))
-        self.cmb_hv_q = QComboBox()
-        hv_q_labels = {"low": _tr("Low"), "medium": _tr("Medium"), "high": _tr("High"), "ultra": _tr("Ultra")}
-        hv_q_codes = list(hv_q_labels.keys())
-        self.cmb_hv_q.addItems(list(hv_q_labels.values()))
-        self.cmb_hv_q.setCurrentIndex(hv_q_codes.index(self.config.hv_quality) if self.config.hv_quality in hv_q_codes else 1)
-        self.cmb_hv_q.currentIndexChanged.connect(lambda idx: setattr(self.config, "hv_quality", hv_q_codes[idx]))
-        qr.addWidget(self.cmb_hv_q)
-        lo.addLayout(qr)
+        # self.cb_hv_paths_3d = self._chk(_tr("Show 3D Nav Lines"), "hv_show_3d")
+        # lo.addWidget(self.cb_hv_paths_3d)
+        # qr = QHBoxLayout()
+        # qr.addWidget(QLabel(_tr("Scan Quality:")))
+        # self.cmb_hv_q = QComboBox()
+        # hv_q_labels = {"low": _tr("Low"), "medium": _tr("Medium"), "high": _tr("High"), "ultra": _tr("Ultra")}
+        # hv_q_codes = list(hv_q_labels.keys())
+        # self.cmb_hv_q.addItems(list(hv_q_labels.values()))
+        # self.cmb_hv_q.setCurrentIndex(hv_q_codes.index(self.config.hv_quality) if self.config.hv_quality in hv_q_codes else 1)
+        # self.cmb_hv_q.currentIndexChanged.connect(lambda idx: setattr(self.config, "hv_quality", hv_q_codes[idx]))
+        # qr.addWidget(self.cmb_hv_q)
+        # lo.addLayout(qr)
         lo.addStretch()
 
     def _build_radar_tab(self):
@@ -1178,8 +1190,8 @@ class Menu(QWidget):
         lo.setContentsMargins(12, 8, 12, 8)
         lo.setSpacing(6)
         lo.addWidget(QLabel(_tr("Hide by category:")))
-        cm = self.config.color_mode
-        if cm == "role":
+        cm = norm_color_mode(self.config.color_mode)
+        if cm == "absolute":
             pairs = [("filter_hide_enemy", _tr("Hunter (Red)")), ("filter_hide_self", _tr("Green (Self)")),
                      ("filter_hide_teammate", _tr("Survivor (Blue)")), ("filter_hide_unknown", _tr("Unknown"))]
         else:
@@ -1245,17 +1257,15 @@ class Overlay(QWidget):
         self._terrain_cache = None
         self._last_terrain_time = 0.0
 
-        # HV state (thread-safe, updated via callbacks)
-        self._hv_exposure_cloud = []
-        self._hv_paths = []
-        self._hv_bridge_ok = False
-        self._hv3d_started = False
-        self._hv_target_idx = 0
-
-        # HV timer (all TCP in bg threads)
-        self._hv_timer = QTimer(self)
-        self._hv_timer.timeout.connect(self._hv_tick)
-        self._hv_timer.start(500)
+        # #HyperVision state disabled (not functional)
+        # self._hv_exposure_cloud = []
+        # self._hv_paths = []
+        # self._hv_bridge_ok = False
+        # self._hv3d_started = False
+        # self._hv_target_idx = 0
+        # self._hv_timer = QTimer(self)
+        # self._hv_timer.timeout.connect(self._hv_tick)
+        # self._hv_timer.start(500)
 
         # Terrain refresh timer
         self._terrain_immediate = True
@@ -1311,107 +1321,20 @@ class Overlay(QWidget):
         except Exception:
             pass
 
-    def _hv_tick(self):
-        """Non-blocking tick 鈥?all TCP is fire-and-forget + immediate terrain."""
-        # Immediate first terrain draw
-        if self.config.radar_terrain and self._terrain_immediate and self.esp:
-            self._terrain_immediate = False
-            self._tick_terrain(force=True)
-            self._terrain_timer.start(10000)
-
-        if not self.esp or not self.config.hypervision_enabled:
-            return
-        try:
-            cam = self.esp.get_camera()
-            if not cam:
-                return
-            with self._cache_lock:
-                players = list(self._cached_players)
-            if not players:
-                return
-
-            # Cache bridge status; auto-inject at most once per 30s
-            self._hv_bridge_ok = ping_fast()
-            log.debug(f"Bridge status: {'ALIVE' if self._hv_bridge_ok else 'DEAD'}")
-            if not self._hv_bridge_ok and self.esp is not None:
-                now = time.time()
-                last = getattr(self, '_last_inject_attempt', 0.0)
-                if now - last > 30:
-                    self._last_inject_attempt = now
-                    log.info("Attempting bridge DLL injection...")
-                    bg_ensure_bridge()
-                else:
-                    log.debug(f"Bridge injection cooldown ({now-last:.0f}/30s)")
-
-            enemies = [p for p in players if not p.get("is_local", True) and p.get("is_enemy", False)]
-
-            if not enemies:
-                if self._hv3d_started:
-                    bg_stop_hv()
-                    self._hv3d_started = False
-                return
-
-            # Round-robin one target per tick
-            self._hv_target_idx = (self._hv_target_idx + 1) % len(enemies)
-            tgt = enemies[self._hv_target_idx]
-            tp, pp = tgt["pos"], cam["loc"]
-
-            # 3D in-engine (bridge required)
-            if self._hv_bridge_ok:
-                q = {"low": 0, "medium": 1, "high": 2, "ultra": 2}.get(self.config.hv_quality, 1)
-                if not self._hv3d_started:
-                    bg_start_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2], q)
-                    self._hv3d_started = True
-                else:
-                    bg_update_hv(tp[0], tp[1], tp[2], pp[0], pp[1], pp[2])
-
-            # 2D overlay: fire visibility scan + path find in bg thread
-            if self._hv_bridge_ok:
-                q_step = {"low": 120, "medium": 80, "high": 50, "ultra": 35}.get(self.config.hv_quality, 80)
-                q_zl = {"low": 10, "medium": 15, "high": 20, "ultra": 25}.get(self.config.hv_quality, 15)
-
-                def _on_cloud(cloud):
-                    self._hv_exposure_cloud = cloud
-                    if cloud:
-                        bg_path_find(pp[0], pp[1], pp[2],
-                                     tp[0], tp[1], tp[2], cloud,
-                                     lambda paths: setattr(self, '_hv_paths', paths))
-
-                bg_visibility_scan(tp[0], tp[1], tp[2],
-                                   step=q_step, z_layers=q_zl, radius=1500,
-                                   cb=_on_cloud)
-                log.debug(f"HV: sent visibility_scan for target at ({tp[0]:.0f},{tp[1]:.0f},{tp[2]:.0f})")
-            else:
-                # Python fallback: simple straight line from player to target
-                self._hv_exposure_cloud = [
-                    [tp[0] + dx, tp[1] + dy, tp[2] + dz]
-                    for dx in [-200, -100, 0, 100, 200]
-                    for dy in [-200, -100, 0, 100, 200]
-                    for dz in [-100, 0, 100]
-                ]
-                steps = 10
-                self._hv_paths = [[
-                    [pp[0] + (tp[0] - pp[0]) * i / steps,
-                     pp[1] + (tp[1] - pp[1]) * i / steps,
-                     pp[2] + (tp[2] - pp[2]) * i / steps]
-                    for i in range(steps + 1)
-                ]]
-                log.debug(f"HV: fallback path (no bridge) to ({tp[0]:.0f},{tp[1]:.0f},{tp[2]:.0f})")
-        except Exception:
-            pass
+    # HyperVision disabled (not functional in current release)
+    # def _hv_tick(self):
+    #     pass
 
     def _try_attach(self):
-        if self.esp is None:
-            try:
-                from meccha_chameleon_tools.core import MecchaESP
-                log.info("Attempting game attach...")
-                self.esp = MecchaESP()
-                self._reader_running = True
-                self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
-                self._reader_thread.start()
-                log.info("Game attached successfully")
-            except Exception as e:
-                log.warn(f"Game attach failed: {e}")
+        if self.esp is not None:
+            return
+        try:
+            from meccha_chameleon_tools.core import MecchaESP
+            log.info("Attempting game attach...")
+            self.esp = MecchaESP()
+            log.info("Game attached successfully")
+        except Exception as e:
+            log.warn(f"Game attach failed: {e}")
 
     def _restart_timer(self):
         interval = max(8, min(100, 1000 // max(10, min(60, self.config.esp_fps))))
@@ -1420,23 +1343,37 @@ class Overlay(QWidget):
     def _reader_loop(self):
         while getattr(self, '_reader_running', False):
             try:
-                if self.config and self.config.enabled and self.esp:
+                if self.config and self.config.enabled and self.esp and self.esp.is_process_alive():
                     cam = self.esp.get_camera()
-                    players = list(self.esp.iter_players(
-                        include_local=self.config.show_local,
-                    ))
-                    # Enrich with per-player data (avoids pymem reads in paintEvent)
-                    for p in players:
-                        actor = p.get("actor")
-                        if actor:
-                            p["_health_info"] = self.esp.get_health(actor, p.get("player_state"))
-                            p["_invincible"] = self.esp.get_invincible(actor)
-                            p["_rot"] = self.esp.get_actor_root_rotation(actor)
+                    if cam is not None:
+                        players = list(self.esp.iter_players(
+                            include_local=self.config.show_local,
+                        ))
+                        for p in players:
+                            actor = p.get("actor")
+                            if actor:
+                                p["_health_info"] = self.esp.get_health(actor, p.get("player_state"))
+                                p["_invincible"] = self.esp.get_invincible(actor)
+                                p["_rot"] = self.esp.get_actor_root_rotation(actor)
+                        with self._cache_lock:
+                            self._cached_cam = cam
+                            self._cached_players = players
+                elif self.esp is None:
+                    self._try_attach()
+                else:
+                    # Process is dead — clean up
+                    log.info("Game process lost — cleaning up for re-attach")
+                    try:
+                        self.esp.cleanup()
+                    except Exception:
+                        pass
+                    self.esp = None
                     with self._cache_lock:
-                        self._cached_cam = cam
-                        self._cached_players = players
+                        self._cached_cam = None
+                        self._cached_players = []
             except Exception:
                 pass
+
             time.sleep(0.1)
 
     def _tick_overlay(self):
@@ -1540,28 +1477,44 @@ class Overlay(QWidget):
         role_detection_ok = any(
             p.get("is_hunter") or p.get("is_survivor") for p in all_players
         )
+
+        # Determine local player's role status (before filtering so observer_abs is available)
+        local_pos = None
+        local_is_hunter = None
+        local_is_survivor = None
+        for p in all_players:
+            if p["is_local"]:
+                local_pos = p["pos"]
+                local_is_hunter = p["is_hunter"]
+                local_is_survivor = p["is_survivor"]
+                break
+        local_found = local_pos is not None
+        local_has_role = local_found and (local_is_hunter or local_is_survivor)
+        local_cm = norm_color_mode(self.config.color_mode)
+
+        # Filter pass — skip team filters in observer mode (no friend/foe distinction)
         filtered = []
         for p in all_players:
-            is_unknown = not role_detection_ok and not p.get("is_local", False) and not p.get("is_enemy", False)
-            if p["is_local"] and self.config.filter_hide_self:
+            is_local = p["is_local"]
+            pi_h = p.get("is_hunter", False)
+            pi_s = p.get("is_survivor", False)
+            pi_ghost = not is_local and not pi_h and not pi_s and role_detection_ok
+            if pi_ghost:
                 continue
-            if not p["is_local"] and p.get("is_enemy", False) and self.config.filter_hide_enemy:
+            if is_local and self.config.filter_hide_self:
                 continue
-            if not p["is_local"] and not p.get("is_enemy", False) and not is_unknown and self.config.filter_hide_teammate:
+            if not local_has_role:
+                filtered.append(p)
+                continue
+            is_unknown = not role_detection_ok and not is_local and not p.get("is_enemy", False)
+            if not is_local and p.get("is_enemy", False) and self.config.filter_hide_enemy:
+                continue
+            if not is_local and not p.get("is_enemy", False) and not is_unknown and self.config.filter_hide_teammate:
                 continue
             if is_unknown and self.config.filter_hide_unknown:
                 continue
             filtered.append(p)
         all_players = filtered
-
-        local_pos = None
-        local_is_hunter = None
-        if all_players:
-            for p in all_players:
-                if p["is_local"]:
-                    local_pos = p["pos"]
-                    local_is_hunter = p["is_hunter"]
-                    break
 
         for pdata in all_players:
             is_local = pdata["is_local"]
@@ -1581,11 +1534,14 @@ class Overlay(QWidget):
             is_hunter = pdata.get("is_hunter", False)
             is_survivor = pdata.get("is_survivor", False)
             is_unknown = not role_detection_ok and not is_local and not is_enemy
-            if not is_local:
+            if not is_local and local_has_role:
                 if is_hunter and not self.config.hunter_esp:
                     continue
                 if is_survivor and not self.config.survivor_esp:
                     continue
+
+            # --- Observer override: local player has no role reference yet ---
+            observer_abs = not local_has_role and not is_local
 
             # Determine base color (team) and role color
             if is_local:
@@ -1603,8 +1559,10 @@ class Overlay(QWidget):
             elif is_survivor:
                 role_color = self.config.survivor_visual_color
 
-            cm = self.config.color_mode
-            if cm == "role" and role_color:
+            # Color resolution: absolute/relative, with observer override
+            if observer_abs:
+                color = role_color if role_color else self.config.unknown_color
+            elif local_cm == "absolute" and role_color:
                 color = role_color
             else:
                 color = base_color
@@ -1657,6 +1615,8 @@ class Overlay(QWidget):
             if self.config.show_names:
                 if is_local:
                     label_parts.append(_tr("YOU"))
+                elif observer_abs:
+                    label_parts.append(_tr(role) if role != "Unknown" else _tr("Player {idx}", idx=idx))
                 elif is_unknown:
                     pass
                 elif is_enemy:
@@ -1673,18 +1633,9 @@ class Overlay(QWidget):
             if label_parts:
                 label_x = int(dsx + self.config.dot_radius * scale + 4)
                 label_y = int(dsy)
-                if cm == "hybrid" and role_color and role != "Unknown":
-                    painter.setPen(QPen(QColor(*color)))
-                    text = " | ".join(p for p in label_parts if p != _tr(role))
-                    painter.drawText(label_x, label_y, text)
-                    role_text = _tr(role)
-                    role_w = painter.fontMetrics().width(text + " | ") if hasattr(painter.fontMetrics(), 'width') else len(text + " | ") * 7
-                    painter.setPen(QPen(QColor(*role_color)))
-                    painter.drawText(label_x + role_w, label_y, role_text)
-                else:
-                    painter.setPen(QPen(QColor(*color)))
-                    text = " | ".join(label_parts)
-                    painter.drawText(label_x, label_y, text)
+                painter.setPen(QPen(QColor(*color)))
+                text = " | ".join(label_parts)
+                painter.drawText(label_x, label_y, text)
 
         if self.config.draw_all:
             actor_count = 0
@@ -1713,38 +1664,37 @@ class Overlay(QWidget):
             status_parts.append(_tr("Attached"))
         else:
             status_parts.append(_tr("Waiting..."))
-        if self._hv_bridge_ok:
-            status_parts.append("HV:ON")
+        # #HyperVision status disabled
+        # if self._hv_bridge_ok:
+        #     status_parts.append("HV:ON")
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.drawText(10, 20, " | ".join(status_parts))
 
-        # HyperVision overlay (primary 鈥?always drawn regardless of bridge)
-        if self.config.hypervision_enabled and cam:
-            try:
-                # Exposure cloud dots
-                for pt in self._hv_exposure_cloud:
-                    s = w2s((pt[0], pt[1], pt[2]) if not isinstance(pt, tuple) else pt, cam, w, h)
-                    if s:
-                        dx, dy = int(s[0]), int(s[1])
-                        painter.setPen(Qt.NoPen)
-                        painter.setBrush(QColor(0, 255, 100, 40))
-                        painter.drawEllipse(dx - 6, dy - 6, 12, 12)
-                # Navigation paths
-                for path in self._hv_paths:
-                    pts_s = []
-                    for wp in path:
-                        s = w2s((wp[0], wp[1], wp[2]), cam, w, h)
-                        if s:
-                            pts_s.append((int(s[0]), int(s[1])))
-                    for i in range(len(pts_s) - 1):
-                        painter.setPen(QPen(QColor(0, 255, 50, 180), 2))
-                        painter.drawLine(pts_s[i][0], pts_s[i][1], pts_s[i+1][0], pts_s[i+1][1])
-                    if pts_s:
-                        painter.setPen(QPen(QColor(0, 255, 50), 3))
-                        painter.setBrush(QColor(0, 255, 50, 180))
-                        painter.drawEllipse(pts_s[-1][0] - 4, pts_s[-1][1] - 4, 8, 8)
-            except Exception:
-                pass
+        # #HyperVision overlay disabled (not functional)
+        # if self.config.hypervision_enabled and cam:
+        #     try:
+        #         for pt in self._hv_exposure_cloud:
+        #             s = w2s((pt[0], pt[1], pt[2]) if not isinstance(pt, tuple) else pt, cam, w, h)
+        #             if s:
+        #                 dx, dy = int(s[0]), int(s[1])
+        #                 painter.setPen(Qt.NoPen)
+        #                 painter.setBrush(QColor(0, 255, 100, 40))
+        #                 painter.drawEllipse(dx - 6, dy - 6, 12, 12)
+        #         for path in self._hv_paths:
+        #             pts_s = []
+        #             for wp in path:
+        #                 s = w2s((wp[0], wp[1], wp[2]), cam, w, h)
+        #                 if s:
+        #                     pts_s.append((int(s[0]), int(s[1])))
+        #             for i in range(len(pts_s) - 1):
+        #                 painter.setPen(QPen(QColor(0, 255, 50, 180), 2))
+        #                 painter.drawLine(pts_s[i][0], pts_s[i][1], pts_s[i+1][0], pts_s[i+1][1])
+        #             if pts_s:
+        #                 painter.setPen(QPen(QColor(0, 255, 50), 3))
+        #                 painter.setBrush(QColor(0, 255, 50, 180))
+        #                 painter.drawEllipse(pts_s[-1][0] - 4, pts_s[-1][1] - 4, 8, 8)
+        #     except Exception:
+        #         pass
 
         if self.config.aimbot_enabled or self.config.magnet_enabled:
             cx, cy = w / 2, h / 2
@@ -1794,14 +1744,27 @@ class Overlay(QWidget):
             radar_y = 20 + self.config.radar_size // 2
             enemy_list = [p for p in all_players if not p["is_local"]]
             for p in enemy_list:
-                is_enemy = p.get("is_enemy", False)
-                is_unknown = not role_detection_ok and not p.get("is_enemy", False)
-                if is_unknown:
+                pi_hunter = p.get("is_hunter", False)
+                pi_survivor = p.get("is_survivor", False)
+                pi_enemy = p.get("is_enemy", False)
+                pi_ghost = not pi_hunter and not pi_survivor and role_detection_ok
+                if pi_ghost:
                     p["color"] = self.config.unknown_color
-                elif is_enemy:
-                    p["color"] = self.config.enemy_color
+                elif not local_has_role:
+                    if pi_hunter:
+                        p["color"] = self.config.hunter_visual_color
+                    elif pi_survivor:
+                        p["color"] = self.config.survivor_visual_color
+                    else:
+                        p["color"] = self.config.unknown_color
                 else:
-                    p["color"] = self.config.teammate_color
+                    pi_unknown = not role_detection_ok and not pi_enemy
+                    if pi_unknown:
+                        p["color"] = self.config.unknown_color
+                    elif pi_enemy:
+                        p["color"] = self.config.enemy_color
+                    else:
+                        p["color"] = self.config.teammate_color
             terrain = getattr(self, "_terrain_cache", None)
             cz = local_pos[2] if local_pos else 0
             draw_radar(painter, cam, local_pos, enemy_list,
