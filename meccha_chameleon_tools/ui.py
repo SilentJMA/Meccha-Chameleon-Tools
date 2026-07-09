@@ -550,7 +550,7 @@ class Menu(QWidget):
         github_link = QLabel('<a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools" style="color: #8ab4f8; text-decoration: none; font-size: 9px;">GitHub</a>')
         github_link.setOpenExternalLinks(True)
         github_link.setStyleSheet("font-size: 9px;")
-        release_label = QLabel("v1.9.0-beta")
+        release_label = QLabel("v1.9.1-beta")
         release_label.setStyleSheet("color: #666; font-size: 9px;")
         copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #888; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
         copyright_link.setOpenExternalLinks(True)
