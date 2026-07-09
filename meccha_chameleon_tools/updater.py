@@ -12,7 +12,7 @@ import ssl
 import urllib.request
 from typing import Callable, Optional
 
-APP_VERSION = "1.9.1-beta"
+APP_VERSION = "1.9.1.1-beta"
 GITHUB_REPO = "SilentJMA/Meccha-Chameleon-Tools"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=30"

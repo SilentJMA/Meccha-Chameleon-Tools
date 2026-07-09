@@ -319,83 +319,127 @@ class UpdateSignals(QObject):
     download_error = pyqtSignal(str)
 
 
-_tab_map = {"ESP": "ESP", "HEALTH": "HEALTH", "VISUAL": "VISUAL", "RADAR": "RADAR", "AIMBOT": "AIMBOT", "PLAYER": "PLAYER", "CAMOUFLAGE": "CAMOUFLAGE"}
-
-
 class Menu(QWidget):
+    # Modern dark palette (single source of truth for the menu theme)
+    C = {
+        "bg":        "#0f1117",
+        "surface":   "#171a23",
+        "surface2":  "#1d212c",
+        "surface3":  "#252a37",
+        "border":    "#2b3140",
+        "border2":   "#353c4f",
+        "text":      "#d7dbe6",
+        "text_dim":  "#8b93a7",
+        "text_faint":"#5b6275",
+        "accent":    "#5b8cff",
+        "accent_d":  "#3f6fe0",
+        "accent2":   "#9d7bff",
+        "good":      "#41d18f",
+        "warn":      "#ffb648",
+        "bad":       "#ff6b6b",
+        "cyan":      "#46d6e0",
+    }
+
     STYLE = """
         QFrame#menuFrame {
-            background-color: rgba(14, 14, 22, 240);
-            border: 1px solid #2a2a3e;
-            border-radius: 10px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #14171f, stop:1 #0d0f15);
+            border: 1px solid #2b3140;
+            border-radius: 14px;
         }
-        QLabel { color: #ccc; font-size: 11px; background: transparent; }
-        QCheckBox { color: #ccc; font-size: 11px; spacing: 8px; padding: 1px 0; }
-        QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px; border: 1px solid #3a3a50; background: #1a1a26; }
-        QCheckBox::indicator:checked { background: #3a6ea5; border-color: #5a8ec5; }
+        QLabel { color: #d7dbe6; font-size: 11px; background: transparent; }
+        QLabel#titleLbl {
+            font-size: 16px; font-weight: bold; color: #aeb9ff;
+            padding: 2px 0; letter-spacing: 2px;
+            background: transparent;
+        }
+        QCheckBox {
+            color: #c5cad8; font-size: 11px; spacing: 9px; padding: 3px 2px;
+            background: transparent;
+        }
+        QCheckBox::indicator {
+            width: 16px; height: 16px; border-radius: 4px;
+            border: 1px solid #3a4253; background: #14171f;
+        }
+        QCheckBox::indicator:hover { border-color: #5b8cff; }
+        QCheckBox::indicator:checked {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                stop:0 #5b8cff, stop:1 #9d7bff);
+            border-color: #7d9bff;
+        }
         QComboBox {
-            background-color: #1a1a26; color: #ccc;
-            border: 1px solid #2a2a3e; padding: 4px 8px; border-radius: 4px;
-            font-size: 11px; min-height: 22px;
+            background-color: #1d212c; color: #d7dbe6;
+            border: 1px solid #2b3140; padding: 5px 10px; border-radius: 6px;
+            font-size: 11px; min-height: 24px;
         }
-        QComboBox:hover { border-color: #4a4a6a; }
+        QComboBox:hover { border-color: #4a5470; }
         QComboBox::drop-down {
             subcontrol-origin: padding; subcontrol-position: top right;
-            width: 22px; border-left: 1px solid #2a2a3e;
-            border-top-right-radius: 4px; border-bottom-right-radius: 4px;
+            width: 24px; border-left: 1px solid #2b3140;
+            border-top-right-radius: 6px; border-bottom-right-radius: 6px;
         }
-        QComboBox::down-arrow { width: 8px; height: 8px; }
+        QComboBox::down-arrow { width: 9px; height: 9px; }
         QComboBox QAbstractItemView {
-            background-color: #1a1a26; color: #ccc;
-            border: 1px solid #2a2a3e; border-radius: 4px;
-            selection-background-color: #3a6ea5; selection-color: #fff;
-            outline: none; font-size: 11px; padding: 2px;
+            background-color: #1d212c; color: #d7dbe6;
+            border: 1px solid #353c4f; border-radius: 6px;
+            selection-background-color: #2f3a5a; selection-color: #fff;
+            outline: none; font-size: 11px; padding: 4px;
         }
         QPushButton {
-            background-color: #22223a; color: #ccc;
-            border: 1px solid #2a2a3e; padding: 5px 10px; border-radius: 5px;
+            background-color: #222737; color: #d7dbe6;
+            border: 1px solid #2b3140; padding: 7px 12px; border-radius: 7px;
             font-size: 11px;
         }
-        QPushButton:hover { background-color: #2e2e4a; border-color: #4a4a6a; }
-        QPushButton:pressed { background-color: #3a3a5a; }
-        QSpinBox, QDoubleSpinBox {
-            background-color: #1a1a26; color: #ccc;
-            border: 1px solid #2a2a3e; padding: 1px 6px; border-radius: 4px;
-            font-size: 11px; min-height: 22px;
+        QPushButton:hover { background-color: #2c3349; border-color: #4a5470; }
+        QPushButton:pressed { background-color: #353d57; }
+        QPushButton:disabled { color: #5b6275; background-color: #1a1d27; border-color: #232838; }
+        QPushButton#primaryBtn {
+            background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                stop:0 #5b8cff, stop:1 #3f6fe0);
+            color: #fff; border: 1px solid #6d9bff; font-weight: bold;
         }
-        QSpinBox:focus, QDoubleSpinBox:focus { border-color: #5a8ec5; }
+        QPushButton#primaryBtn:hover { background: #6d9bff; }
+        QPushButton#dangerBtn {
+            background-color: #3a2026; color: #ff9b9b; border-color: #5a2f38;
+        }
+        QPushButton#dangerBtn:hover { background-color: #4d2a31; color: #ffb3b3; }
+        QSpinBox, QDoubleSpinBox {
+            background-color: #14171f; color: #d7dbe6;
+            border: 1px solid #2b3140; padding: 3px 8px; border-radius: 6px;
+            font-size: 11px; min-height: 24px;
+        }
+        QSpinBox:focus, QDoubleSpinBox:focus { border-color: #5b8cff; }
         QSpinBox::up-button, QDoubleSpinBox::up-button,
         QSpinBox::down-button, QDoubleSpinBox::down-button {
-            background-color: #22223a; border: 1px solid #2a2a3e;
-            width: 18px;
+            background-color: #222737; border: 1px solid #2b3140; width: 20px;
         }
         QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
         QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-            background-color: #2e2e4a;
+            background-color: #2c3349;
         }
-        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { width: 6px; height: 6px; }
-        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { width: 6px; height: 6px; }
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { width: 7px; height: 7px; }
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { width: 7px; height: 7px; }
         QSlider::groove:horizontal {
-            background: #1a1a26; border: 1px solid #2a2a3e;
+            background: #14171f; border: 1px solid #2b3140;
             height: 6px; border-radius: 3px;
         }
         QSlider::handle:horizontal {
-            background: #3a6ea5; border: 1px solid #5a8ec5;
-            width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+                stop:0 #5b8cff, stop:1 #9d7bff);
+            border: 1px solid #7d9bff; width: 15px; height: 15px;
+            margin: -5px 0; border-radius: 8px;
         }
-        QSlider::handle:horizontal:hover { background: #4a7eb5; }
-        QSlider::sub-page:horizontal { background: #3a6ea5; border-radius: 3px; }
-        QLabel#titleLbl {
-            font-size: 14px; font-weight: bold; color: #8ab4f8;
-            padding: 4px 0; letter-spacing: 1px;
-        }
+        QSlider::handle:horizontal:hover { background: #6d9bff; }
+        QSlider::sub-page:horizontal { background: #3f6fe0; border-radius: 3px; }
     """
 
     def __init__(self, config: Config, esp: MecchaESP, tabs=None):
         super().__init__()
         self.config = config
         self.esp = esp
-        self._active_tabs = tabs or ["ESP", "HEALTH", "VISUAL", "RADAR", "AIMBOT", "PLAYER", "CAMOUFLAGE"]
+        self._active_tabs = tabs or [
+            "ESP", "HEALTH", "VISUALS", "RADAR", "AIM/ASSIST", "PLAYER", "CAMOUFLAGE"
+        ]
         self.setWindowTitle("Meccha Chameleon Tools")
         self.setWindowFlags(
             Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool
@@ -416,8 +460,8 @@ class Menu(QWidget):
         self._outer_layout = QVBoxLayout(self)
         self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._build_ui()
-        self.resize(640, 720)
-        self.setMinimumSize(540, 600)
+        self.resize(660, 760)
+        self.setMinimumSize(560, 620)
         QTimer.singleShot(1500, self._check_updates)
 
     def _close_app(self):
@@ -427,15 +471,15 @@ class Menu(QWidget):
     def _style_update_button(self, highlight=False):
         if highlight:
             self.update_btn.setStyleSheet(
-                "QPushButton { background: #3a6ea5; color: #fff; border: 1px solid #5a8ec5;"
-                " border-radius: 4px; font-size: 9px; padding: 1px 8px; }"
-                " QPushButton:hover { background: #4a7eb5; }"
+                "QPushButton { background: #3f6fe0; color: #fff; border: 1px solid #6d9bff;"
+                " border-radius: 6px; font-size: 10px; padding: 3px 10px; }"
+                " QPushButton:hover { background: #5b8cff; }"
             )
         else:
             self.update_btn.setStyleSheet(
-                "QPushButton { background: #1a1a26; color: #888; border: 1px solid #2a2a3e;"
-                " border-radius: 4px; font-size: 9px; padding: 1px 8px; }"
-                " QPushButton:hover { border-color: #4a4a6a; color: #ccc; }"
+                "QPushButton { background: #1d212c; color: #8b93a7; border: 1px solid #2b3140;"
+                " border-radius: 6px; font-size: 10px; padding: 3px 10px; }"
+                " QPushButton:hover { border-color: #4a5470; color: #d7dbe6; }"
             )
 
     def _refresh_update_button(self):
@@ -593,49 +637,78 @@ class Menu(QWidget):
         self._container = container
         container.setStyleSheet(self.STYLE)
         outer = QVBoxLayout(container)
-        outer.setContentsMargins(12, 8, 12, 8)
-        outer.setSpacing(6)
+        outer.setContentsMargins(14, 12, 14, 12)
+        outer.setSpacing(8)
 
+        # ---- Header (title + language + resize grip) --------------------
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        logo = QLabel("\u25c8")  # ◈ diamond bullet
+        logo.setStyleSheet("color: #5b8cff; font-size: 18px;")
         title = QLabel(_tr("MECCA CHAMELEON TOOLS"))
         title.setObjectName("titleLbl")
-        title.setAlignment(Qt.AlignCenter)
-        outer.addWidget(title)
+        header.addWidget(logo)
+        header.addWidget(title)
+        header.addStretch()
 
+        self.lang_combo = QComboBox()
+        lang_codes = list(LANGUAGE_NAMES.keys())
+        self.lang_combo.addItems([LANGUAGE_NAMES[k] for k in lang_codes])
+        self.lang_combo.setCurrentIndex(lang_codes.index(self.config.language) if self.config.language in lang_codes else 0)
+        self.lang_combo.currentIndexChanged.connect(lambda idx: self._switch_language(lang_codes[idx]))
+        self.lang_combo.setFixedWidth(120)
+        header.addWidget(self.lang_combo)
+
+        grip = QSizeGrip(container)
+        grip.setFixedSize(16, 16)
+        grip.setStyleSheet("background: transparent;")
+        header.addWidget(grip)
+        outer.addLayout(header)
+
+        sub = QLabel(_tr("External ESP & camouflage overlay"))
+        sub.setStyleSheet(f"color: {self.C['text_faint']}; font-size: 10px; padding: 0 2px;")
+        outer.addWidget(sub)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet(f"color: {self.C['border']};")
+        outer.addWidget(line)
+
+        # ---- Body (sidebar + stacked pages) -----------------------------
         body = QHBoxLayout()
-        body.setSpacing(8)
+        body.setSpacing(10)
 
         self.tab_list = QListWidget()
-        self.tab_list.setFixedWidth(90)
+        self.tab_list.setFixedWidth(124)
         self.tab_list.setFocusPolicy(Qt.NoFocus)
-        self.tab_list.setStyleSheet("""
-            QListWidget {
-                background: #1a1a26; border: 1px solid #2a2a3e;
-                border-radius: 6px; padding: 4px; outline: none;
-            }
-            QListWidget::item {
-                color: #777; padding: 8px 6px; border-radius: 4px;
+        self.tab_list.setStyleSheet(f"""
+            QListWidget {{
+                background: {self.C['surface']}; border: 1px solid {self.C['border']};
+                border-radius: 10px; padding: 6px; outline: none;
+            }}
+            QListWidget::item {{
+                color: {self.C['text_dim']}; padding: 9px 8px; border-radius: 7px;
                 font-size: 11px; font-weight: bold;
-            }
-            QListWidget::item:selected {
-                background: #2a3a5a; color: #8ab4f8;
-            }
-            QListWidget::item:hover:!selected {
-                background: #22223a; color: #aaa;
-            }
-            QListWidget::vertical-scrollbar {
-                background: #12121a; width: 8px; border-radius: 4px;
-            }
-            QListWidget::vertical-scrollbar-handle {
-                background: #2a2a3e; min-height: 20px; border-radius: 4px;
-            }
-            QListWidget::vertical-scrollbar-handle:hover {
-                background: #3a3a5a;
-            }
-            QListWidget::vertical-scrollbar-add-line, QListWidget::vertical-scrollbar-sub-line {
-                height: 0px;
-            }
+            }}
+            QListWidget::item:selected {{
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+                    stop:0 #2f3a5a, stop:1 #283150);
+                color: #aeb9ff;
+                border-left: 3px solid #5b8cff;
+            }}
+            QListWidget::item:hover:!selected {{
+                background: {self.C['surface2']}; color: {self.C['text']};
+            }}
+            QListWidget::vertical-scrollbar {{ background: #12141c; width: 8px; border-radius: 4px; }}
+            QListWidget::vertical-scrollbar-handle {{
+                background: {self.C['border2']}; min-height: 20px; border-radius: 4px;
+            }}
+            QListWidget::vertical-scrollbar-handle:hover {{ background: #444c63; }}
+            QListWidget::vertical-scrollbar-add-line,
+            QListWidget::vertical-scrollbar-sub-line {{ height: 0px; }}
         """)
-        self.tab_list.addItems([_tr(t) for t in self._active_tabs])
+        for t in self._active_tabs:
+            self.tab_list.addItem(self._tab_item_text(t))
         self.tab_list.currentRowChanged.connect(self._switch_tab)
 
         self.stack = QStackedWidget()
@@ -657,18 +730,20 @@ class Menu(QWidget):
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
 
+        # ---- Action bar (Save / Load / Close) ---------------------------
         bar = QHBoxLayout()
         bar.setSpacing(8)
         self.btn_save = QPushButton(_tr("Save Config"))
+        self.btn_save.setObjectName("primaryBtn")
         self.btn_save.clicked.connect(self._save_config)
         self.btn_load = QPushButton(_tr("Load Config"))
         self.btn_load.clicked.connect(self._load_config)
         self.btn_close = QPushButton(_tr("Close"))
+        self.btn_close.setObjectName("dangerBtn")
         self.btn_close.clicked.connect(self._close_app)
-        self.btn_close.setStyleSheet("QPushButton { background-color: #3a1a1a; border-color: #5a2a2a; color: #e88; } QPushButton:hover { background-color: #5a2a2a; color: #faa; }")
 
-        hint = QLabel(_tr("Ins/F1 toggle | Drag to move | END=Exit"))
-        hint.setStyleSheet("color: #555; font-size: 9px;")
+        hint = QLabel(_tr("Ins/F1 toggle \u2022 Drag to move \u2022 END = Exit"))
+        hint.setStyleSheet(f"color: {self.C['text_faint']}; font-size: 9px;")
         bar.addWidget(self.btn_save)
         bar.addWidget(self.btn_load)
         bar.addWidget(self.btn_close)
@@ -676,40 +751,20 @@ class Menu(QWidget):
         bar.addWidget(hint)
         outer.addLayout(bar)
 
-        lang_row = QHBoxLayout()
-        lang_row.setSpacing(6)
-        lang_label = QLabel(_tr("Language:"))
-        lang_label.setStyleSheet("color: #888; font-size: 10px;")
-        self.lang_combo = QComboBox()
-        lang_codes = list(LANGUAGE_NAMES.keys())
-        self.lang_combo.addItems([LANGUAGE_NAMES[k] for k in lang_codes])
-        self.lang_combo.setCurrentIndex(lang_codes.index(self.config.language) if self.config.language in lang_codes else 0)
-        self.lang_combo.currentIndexChanged.connect(lambda idx: self._switch_language(lang_codes[idx]))
-        self.lang_combo.setFixedWidth(130)
-        lang_row.addWidget(lang_label)
-        lang_row.addWidget(self.lang_combo)
-        lang_row.addStretch()
-        grip = QSizeGrip(container)
-        grip.setFixedSize(16, 16)
-        grip.setStyleSheet("background: transparent;")
-        lang_row.addWidget(grip)
-        outer.addLayout(lang_row)
-
+        # ---- Footer (links + update) ------------------------------------
         footer = QHBoxLayout()
         footer.setSpacing(8)
         github_link = QLabel('<a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools" style="color: #8ab4f8; text-decoration: none; font-size: 9px;">GitHub</a>')
         github_link.setOpenExternalLinks(True)
-        github_link.setStyleSheet("font-size: 9px;")
         release_label = QLabel("v" + updater.APP_VERSION)
-        release_label.setStyleSheet("color: #666; font-size: 9px;")
+        release_label.setStyleSheet(f"color: {self.C['text_faint']}; font-size: 9px;")
         self.update_btn = QPushButton(_tr("Check for Updates"))
         self.update_btn.setCursor(Qt.PointingHandCursor)
-        self.update_btn.setFixedHeight(20)
+        self.update_btn.setFixedHeight(22)
         self.update_btn.clicked.connect(self._on_update_button_clicked)
         self._style_update_button()
-        copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #888; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
+        copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #8b93a7; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
         copyright_link.setOpenExternalLinks(True)
-        copyright_link.setStyleSheet("font-size: 9px;")
         footer.addWidget(github_link)
         footer.addStretch()
         footer.addWidget(release_label)
@@ -725,16 +780,76 @@ class Menu(QWidget):
             self._build_esp_tab()
         if "HEALTH" in self._active_tabs:
             self._build_health_tab()
-        if "VISUAL" in self._active_tabs:
+        if "VISUALS" in self._active_tabs:
             self._build_visual_tab()
         if "RADAR" in self._active_tabs:
             self._build_radar_tab()
-        if "AIMBOT" in self._active_tabs:
+        if "AIM/ASSIST" in self._active_tabs:
             self._build_aimbot_tab()
         if "PLAYER" in self._active_tabs:
             self._build_player_tab()
         if "CAMOUFLAGE" in self._active_tabs:
             self._build_camouflage_tab()
+
+    # ----- Layout helpers -------------------------------------------------
+    def _tab_item_text(self, tab):
+        icon = {
+            "ESP": "◈",
+            "HEALTH": "♥",
+            "VISUALS": "✦",
+            "RADAR": "◉",
+            "AIM/ASSIST": "⊕",
+            "PLAYER": "⬡",
+            "CAMOUFLAGE": "▣",
+        }.get(tab, "•")
+        return f"{icon}  {_tr(tab)}"
+
+    def _section_header(self, text, color=None):
+        lbl = QLabel(text)
+        lbl.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; letter-spacing: 1px; "
+            f"color: {color or self.C['accent']}; padding: 2px 0;"
+        )
+        return lbl
+
+    def _card(self, spacing=6, margins=(12, 10, 12, 10)):
+        card = QFrame()
+        card.setFrameShape(QFrame.StyledPanel)
+        card.setStyleSheet(
+            f"QFrame {{ background: {self.C['surface']}; border: 1px solid {self.C['border']}; "
+            f"border-radius: 10px; }}"
+        )
+        lo = QVBoxLayout(card)
+        lo.setContentsMargins(*margins)
+        lo.setSpacing(spacing)
+        return card, lo
+
+    def _labeled_row(self, label, widget, label_color=None):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lbl = QLabel(label)
+        if label_color:
+            lbl.setStyleSheet(f"color: {label_color}; font-size: 11px;")
+        row.addWidget(lbl)
+        row.addStretch(1)
+        row.addWidget(widget)
+        return row
+
+    def _key_record_row(self, label, lbl_widget, btn_widget):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(lbl_widget)
+        row.addStretch(1)
+        row.addWidget(btn_widget)
+        return row
+
+    def _spin(self, value, vmin, vmax, step, on_change, double=False):
+        spn = QDoubleSpinBox() if double else QSpinBox()
+        spn.setRange(vmin, vmax)
+        spn.setSingleStep(step)
+        spn.setValue(value)
+        spn.valueChanged.connect(on_change)
+        return spn
 
     def _switch_tab(self, idx):
         if 0 <= idx < len(self._active_tabs):
@@ -744,26 +859,28 @@ class Menu(QWidget):
         p = self._pages["ESP"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
+        lo.setSpacing(10)
+
+        # Master switch
         self.cb_enabled = self._chk(_tr("ESP Enabled"), "enabled")
+        self.cb_enabled.setStyleSheet("font-size: 12px; font-weight: bold; color: #aeb9ff;")
         lo.addWidget(self.cb_enabled)
+
+        # Display modes
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("DISPLAY MODE")))
         row = QHBoxLayout()
         row.setSpacing(6)
         self.cb_dot = self._chk(_tr("Dot"), "dot_esp")
         self.cb_box = self._chk(_tr("2D Box"), "box_esp")
         self.cb_skeleton = self._chk(_tr("Skeleton"), "skeleton_esp")
+        self.cb_corner = self._chk(_tr("Corner Box"), "corner_box")
         row.addWidget(self.cb_dot)
         row.addWidget(self.cb_box)
         row.addWidget(self.cb_skeleton)
-        lo.addLayout(row)
-        for cfg, label in [("show_local", _tr("Show Local Player")), ("show_names", _tr("Show Names")),
-                           ("show_distance", _tr("Show Distance")), ("snap_lines", _tr("Snap Lines")),
-                           ("enemy_only", _tr("Enemy Only")), ("show_roles", _tr("Show Roles")),
-                           ("team_filter", _tr("Team Filter")), ("distance_scaling", _tr("Dist. Scaling"))]:
-            cb = self._chk(label, cfg)
-            lo.addWidget(cb)
-        self.cb_corner = self._chk(_tr("Corner Box"), "corner_box")
-        lo.addWidget(self.cb_corner)
+        row.addWidget(self.cb_corner)
+        clo.addLayout(row)
+
         dr = QHBoxLayout()
         dr.addWidget(QLabel(_tr("Dot Radius:")))
         self.spn_dot = QSpinBox()
@@ -771,281 +888,254 @@ class Menu(QWidget):
         self.spn_dot.setValue(self.config.dot_radius)
         self.spn_dot.valueChanged.connect(lambda v: setattr(self.config, "dot_radius", v))
         dr.addWidget(self.spn_dot)
-        lo.addLayout(dr)
+        self.cb_dist_scale = self._chk(_tr("Dist. Scaling"), "distance_scaling")
+        dr.addStretch(1)
+        dr.addWidget(self.cb_dist_scale)
+        clo.addLayout(dr)
+        lo.addWidget(card)
+
+        # Elements shown
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("ELEMENTS")))
+        for cfg, label in [("show_local", _tr("Show Local Player")), ("show_names", _tr("Show Names")),
+                           ("show_distance", _tr("Show Distance")), ("snap_lines", _tr("Snap Lines")),
+                           ("enemy_only", _tr("Enemy Only")), ("show_roles", _tr("Show Roles")),
+                           ("team_filter", _tr("Team Filter"))]:
+            clo.addWidget(self._chk(label, cfg))
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_health_tab(self):
         p = self._pages["HEALTH"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
+        lo.setSpacing(10)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("STATUS BARS"), self.C["bad"]))
         self.cb_hp = self._chk(_tr("Health Bar"), "health_bar")
         self.cb_shield = self._chk(_tr("Shield Bar"), "shield_bar")
-        lo.addWidget(self.cb_hp)
-        lo.addWidget(self.cb_shield)
-        hr = QHBoxLayout()
-        hr.addWidget(QLabel(_tr("Model Height:")))
-        self.spn_height = QSpinBox()
-        self.spn_height.setRange(50, 250)
-        self.spn_height.setValue(int(self.config.box_height_world))
-        self.spn_height.valueChanged.connect(lambda v: setattr(self.config, "box_height_world", float(v)))
-        hr.addWidget(self.spn_height)
-        lo.addLayout(hr)
-        yr = QHBoxLayout()
-        yr.addWidget(QLabel(_tr("Y Offset:")))
-        self.spn_yoff = QSpinBox()
-        self.spn_yoff.setRange(-50, 50)
-        self.spn_yoff.setValue(self.config.box_y_offset)
-        self.spn_yoff.valueChanged.connect(lambda v: setattr(self.config, "box_y_offset", v))
-        yr.addWidget(self.spn_yoff)
-        lo.addLayout(yr)
+        clo.addWidget(self.cb_hp)
+        clo.addWidget(self.cb_shield)
+        lo.addWidget(card)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("BOX GEOMETRY")))
+        hr = self._labeled_row(_tr("Model Height:"), self._spin(int(self.config.box_height_world), 50, 250, 1, lambda v: setattr(self.config, "box_height_world", float(v))))
+        clo.addLayout(hr)
+        yr = self._labeled_row(_tr("Y Offset:"), self._spin(self.config.box_y_offset, -50, 50, 1, lambda v: setattr(self.config, "box_y_offset", v)))
+        clo.addLayout(yr)
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_visual_tab(self):
-        p = self._pages["VISUAL"]
+        p = self._pages["VISUALS"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
-        hdr = QLabel(_tr("PER-ROLE VISUALS"))
-        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr)
+        lo.setSpacing(10)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("PER-ROLE VISUALS"), self.C["accent2"]))
         self.cb_hunter = self._chk(_tr("Hunter ESP"), "hunter_esp")
         self.cb_survivor = self._chk(_tr("Survivor ESP"), "survivor_esp")
-        lo.addWidget(self.cb_hunter)
-        lo.addWidget(self.cb_survivor)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #2a2a3e;")
-        lo.addWidget(sep)
-        hdr2 = QLabel(_tr("DRAW OPTIONS"))
-        hdr2.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr2)
+        clo.addWidget(self.cb_hunter)
+        clo.addWidget(self.cb_survivor)
+        lo.addWidget(card)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("DRAW OPTIONS")))
         for cfg, label in [("draw_all", _tr("Draw All Actors")), ("draw_all_names", _tr("Draw All Names")),
                            ("invincible_detect", _tr("Detect Invincible")),
                            ("disable_buried", _tr("Disable Too Buried")),
                            ("show_background_geo", _tr("Show Background Geometry")),
                            ("show_cursor", _tr("Show Cursor"))]:
-            cb = self._chk(label, cfg)
-            lo.addWidget(cb)
-        dr = QHBoxLayout()
-        dr.addWidget(QLabel(_tr("Draw All Range:")))
-        self.spn_draw_range = QSpinBox()
-        self.spn_draw_range.setRange(500, 50000)
-        self.spn_draw_range.setSingleStep(500)
-        self.spn_draw_range.setValue(int(self.config.draw_all_max_distance))
-        self.spn_draw_range.valueChanged.connect(lambda v: setattr(self.config, "draw_all_max_distance", float(v)))
-        dr.addWidget(self.spn_draw_range)
-        lo.addLayout(dr)
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.HLine)
-        sep2.setStyleSheet("color: #2a2a3e;")
-        lo.addWidget(sep2)
-        hdr3 = QLabel(_tr("APPEARANCE"))
-        hdr3.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr3)
-        lr = QHBoxLayout()
-        lr.addWidget(QLabel(_tr("Line Thickness:")))
-        self.spn_line = QSpinBox()
-        self.spn_line.setRange(1, 8)
-        self.spn_line.setValue(self.config.line_thickness)
-        self.spn_line.valueChanged.connect(lambda v: setattr(self.config, "line_thickness", v))
-        lr.addWidget(self.spn_line)
-        lo.addLayout(lr)
-        pr = QHBoxLayout()
-        pr.addWidget(QLabel(_tr("Point Size:")))
-        self.spn_point = QSpinBox()
-        self.spn_point.setRange(1, 8)
-        self.spn_point.setValue(self.config.point_size)
-        self.spn_point.valueChanged.connect(lambda v: setattr(self.config, "point_size", v))
-        pr.addWidget(self.spn_point)
-        lo.addLayout(pr)
+            clo.addWidget(self._chk(label, cfg))
+        dr = self._labeled_row(_tr("Draw All Range:"),
+                               self._spin(int(self.config.draw_all_max_distance), 500, 50000, 500,
+                                          lambda v: setattr(self.config, "draw_all_max_distance", float(v))))
+        clo.addLayout(dr)
+        lo.addWidget(card)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("APPEARANCE")))
+        lr = self._labeled_row(_tr("Line Thickness:"),
+                               self._spin(self.config.line_thickness, 1, 8, 1,
+                                          lambda v: setattr(self.config, "line_thickness", v)))
+        clo.addLayout(lr)
+        pr = self._labeled_row(_tr("Point Size:"),
+                               self._spin(self.config.point_size, 1, 8, 1,
+                                          lambda v: setattr(self.config, "point_size", v)))
+        clo.addLayout(pr)
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_radar_tab(self):
         p = self._pages["RADAR"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
+        lo.setSpacing(10)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("RADAR"), self.C["cyan"]))
         self.cb_radar = self._chk(_tr("Radar Enabled"), "radar_enabled")
-        lo.addWidget(self.cb_radar)
-        sr = QHBoxLayout()
-        sr.addWidget(QLabel(_tr("Radar Size:")))
-        self.spn_radar_size = QSpinBox()
-        self.spn_radar_size.setRange(80, 400)
-        self.spn_radar_size.setValue(self.config.radar_size)
-        self.spn_radar_size.valueChanged.connect(lambda v: setattr(self.config, "radar_size", v))
-        sr.addWidget(self.spn_radar_size)
-        lo.addLayout(sr)
-        rr = QHBoxLayout()
-        rr.addWidget(QLabel(_tr("Radar Range:")))
-        self.spn_radar_range = QSpinBox()
-        self.spn_radar_range.setRange(1000, 50000)
-        self.spn_radar_range.setSingleStep(500)
-        self.spn_radar_range.setValue(int(self.config.radar_range))
-        self.spn_radar_range.valueChanged.connect(lambda v: setattr(self.config, "radar_range", float(v)))
-        rr.addWidget(self.spn_radar_range)
-        lo.addLayout(rr)
+        clo.addWidget(self.cb_radar)
+        sr = self._labeled_row(_tr("Radar Size:"),
+                               self._spin(self.config.radar_size, 80, 400, 1,
+                                          lambda v: setattr(self.config, "radar_size", v)))
+        clo.addLayout(sr)
+        rr = self._labeled_row(_tr("Radar Range:"),
+                               self._spin(int(self.config.radar_range), 1000, 50000, 500,
+                                          lambda v: setattr(self.config, "radar_range", float(v))))
+        clo.addLayout(rr)
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_aimbot_tab(self):
-        p = self._pages["AIMBOT"]
+        p = self._pages["AIM/ASSIST"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
+        lo.setSpacing(10)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("AIMBOT"), self.C["bad"]))
         self.cb_aimbot = self._chk(_tr("Aimbot Enabled"), "aimbot_enabled")
         self.cb_aim_fov = self._chk(_tr("Show FOV Circle"), "aimbot_show_fov")
-        lo.addWidget(self.cb_aimbot)
-        lo.addWidget(self.cb_aim_fov)
-        kr = QHBoxLayout()
-        self.lbl_aim_key = QLabel(_tr("Aim Key: {key}", key=self.config.aimbot_key))
-        self.btn_record_key = QPushButton(_tr("Record Key"))
-        self.btn_record_key.clicked.connect(self._start_aim_key_record)
-        kr.addWidget(self.lbl_aim_key)
-        kr.addWidget(self.btn_record_key)
-        lo.addLayout(kr)
-        fr = QHBoxLayout()
-        fr.addWidget(QLabel(_tr("FOV Radius:")))
-        self.spn_aim_fov = QSpinBox()
-        self.spn_aim_fov.setRange(10, 600)
-        self.spn_aim_fov.setValue(self.config.aimbot_fov)
-        self.spn_aim_fov.valueChanged.connect(lambda v: setattr(self.config, "aimbot_fov", v))
-        fr.addWidget(self.spn_aim_fov)
-        lo.addLayout(fr)
-        sr = QHBoxLayout()
-        sr.addWidget(QLabel(_tr("Smooth:")))
-        self.spn_aim_smooth = QDoubleSpinBox()
-        self.spn_aim_smooth.setRange(0.01, 1.0)
-        self.spn_aim_smooth.setSingleStep(0.05)
-        self.spn_aim_smooth.setValue(self.config.aimbot_smooth)
-        self.spn_aim_smooth.valueChanged.connect(lambda v: setattr(self.config, "aimbot_smooth", v))
-        sr.addWidget(self.spn_aim_smooth)
-        lo.addLayout(sr)
-        ar = QHBoxLayout()
-        ar.addWidget(QLabel(_tr("Target Offset:")))
-        self.spn_aim_off = QSpinBox()
-        self.spn_aim_off.setRange(-200, 200)
-        self.spn_aim_off.setValue(int(self.config.aimbot_target_offset))
-        self.spn_aim_off.valueChanged.connect(lambda v: setattr(self.config, "aimbot_target_offset", float(v)))
-        ar.addWidget(self.spn_aim_off)
-        lo.addLayout(ar)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #2a2a3e;")
-        lo.addWidget(sep)
-        hdr = QLabel(_tr("MAGNET AIM ASSIST"))
-        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr)
+        clo.addWidget(self.cb_aimbot)
+        clo.addWidget(self.cb_aim_fov)
+        kr_lbl = QLabel(_tr("Aim Key: {key}", key=self.config.aimbot_key))
+        kr_btn = QPushButton(_tr("Record Key"))
+        kr_btn.clicked.connect(self._start_aim_key_record)
+        kr = self._key_record_row(None, kr_lbl, kr_btn)
+        self.lbl_aim_key = kr_lbl
+        self.btn_record_key = kr_btn
+        clo.addLayout(kr)
+        fr = self._labeled_row(_tr("FOV Radius:"),
+                               self._spin(self.config.aimbot_fov, 10, 600, 1,
+                                          lambda v: setattr(self.config, "aimbot_fov", v)))
+        clo.addLayout(fr)
+        sr = self._labeled_row(_tr("Smooth:"),
+                               self._spin(self.config.aimbot_smooth, 0.01, 1.0, 0.05,
+                                          lambda v: setattr(self.config, "aimbot_smooth", v), double=True))
+        clo.addLayout(sr)
+        ar = self._labeled_row(_tr("Target Offset:"),
+                               self._spin(int(self.config.aimbot_target_offset), -200, 200, 1,
+                                          lambda v: setattr(self.config, "aimbot_target_offset", float(v))))
+        clo.addLayout(ar)
+        lo.addWidget(card)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("MAGNET AIM ASSIST"), self.C["warn"]))
         self.cb_magnet = self._chk(_tr("Magnet Enabled"), "magnet_enabled")
-        lo.addWidget(self.cb_magnet)
-        mkr = QHBoxLayout()
-        mkr.addWidget(QLabel(_tr("Magnet Key:")))
-        self.lbl_magnet_key = QLabel(self.config.magnet_hold_key)
-        self.btn_record_magnet = QPushButton(_tr("Record"))
-        self.btn_record_magnet.clicked.connect(self._start_magnet_key_record)
-        mkr.addWidget(self.lbl_magnet_key)
-        mkr.addWidget(self.btn_record_magnet)
-        lo.addLayout(mkr)
-        mfr = QHBoxLayout()
-        mfr.addWidget(QLabel(_tr("Magnet FOV:")))
-        self.spn_magnet_fov = QSpinBox()
-        self.spn_magnet_fov.setRange(10, 300)
-        self.spn_magnet_fov.setValue(self.config.magnet_fov)
-        self.spn_magnet_fov.valueChanged.connect(lambda v: setattr(self.config, "magnet_fov", v))
-        mfr.addWidget(self.spn_magnet_fov)
-        lo.addLayout(mfr)
-        msr = QHBoxLayout()
-        msr.addWidget(QLabel(_tr("Magnet Strength:")))
-        self.spn_magnet_str = QDoubleSpinBox()
-        self.spn_magnet_str.setRange(0.1, 1.0)
-        self.spn_magnet_str.setSingleStep(0.1)
-        self.spn_magnet_str.setValue(self.config.magnet_strength)
-        self.spn_magnet_str.valueChanged.connect(lambda v: setattr(self.config, "magnet_strength", v))
-        msr.addWidget(self.spn_magnet_str)
-        lo.addLayout(msr)
+        clo.addWidget(self.cb_magnet)
+        mkr_lbl = QLabel(self.config.magnet_hold_key)
+        mkr_btn = QPushButton(_tr("Record"))
+        mkr_btn.clicked.connect(self._start_magnet_key_record)
+        mkr = self._key_record_row(None, mkr_lbl, mkr_btn)
+        self.lbl_magnet_key = mkr_lbl
+        self.btn_record_magnet = mkr_btn
+        clo.addLayout(mkr)
+        mfr = self._labeled_row(_tr("Magnet FOV:"),
+                                self._spin(self.config.magnet_fov, 10, 300, 1,
+                                           lambda v: setattr(self.config, "magnet_fov", v)))
+        clo.addLayout(mfr)
+        msr = self._labeled_row(_tr("Magnet Strength:"),
+                                self._spin(self.config.magnet_strength, 0.1, 1.0, 0.1,
+                                           lambda v: setattr(self.config, "magnet_strength", v), double=True))
+        clo.addLayout(msr)
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_player_tab(self):
         p = self._pages["PLAYER"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(4)
-        hdr = QLabel(_tr("PLAYER MODIFICATION"))
-        hdr.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr)
+        lo.setSpacing(10)
+
         notice = QLabel(_tr("\u26a0 Host Only - These features only work when you are the game host"))
-        notice.setStyleSheet("color: #ff6b6b; font-size: 10px; font-weight: bold; background-color: #2a1a1a; padding: 4px; border-radius: 3px;")
+        notice.setStyleSheet(
+            f"color: {self.C['warn']}; font-size: 10px; font-weight: bold; "
+            f"background-color: #2a2418; padding: 6px 8px; border-radius: 6px; "
+            f"border: 1px solid {self.C['border']};"
+        )
         notice.setWordWrap(True)
         lo.addWidget(notice)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("PLAYER MODIFICATION"), self.C["good"]))
         self.cb_player_mod = self._chk(_tr("Player Mod Enabled"), "player_mod_enabled")
-        lo.addWidget(self.cb_player_mod)
-        sr = QHBoxLayout()
-        sr.addWidget(QLabel(_tr("Speed Multiplier:")))
-        self.spn_speed = QDoubleSpinBox()
-        self.spn_speed.setRange(0.5, 10.0)
-        self.spn_speed.setSingleStep(0.5)
-        self.spn_speed.setValue(self.config.player_speed_mult)
-        self.spn_speed.valueChanged.connect(lambda v: setattr(self.config, "player_speed_mult", v))
-        sr.addWidget(self.spn_speed)
-        lo.addLayout(sr)
-        jr = QHBoxLayout()
-        jr.addWidget(QLabel(_tr("Jump Multiplier:")))
-        self.spn_jump = QDoubleSpinBox()
-        self.spn_jump.setRange(0.5, 10.0)
-        self.spn_jump.setSingleStep(0.5)
-        self.spn_jump.setValue(self.config.player_jump_mult)
-        self.spn_jump.valueChanged.connect(lambda v: setattr(self.config, "player_jump_mult", v))
-        jr.addWidget(self.spn_jump)
-        lo.addLayout(jr)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #2a2a3e;")
-        lo.addWidget(sep)
-        hdr2 = QLabel(_tr("COMMANDS"))
-        hdr2.setStyleSheet("font-size: 12px; font-weight: bold; color: #8ab4f8;")
-        lo.addWidget(hdr2)
-        tkr = QHBoxLayout()
-        tkr.addWidget(QLabel(_tr("Teleport Collectible Key:")))
-        self.lbl_tp_key = QLabel(self.config.teleport_collectible_key)
-        self.btn_record_tp = QPushButton(_tr("Record"))
-        self.btn_record_tp.clicked.connect(self._start_tp_key_record)
-        tkr.addWidget(self.lbl_tp_key)
-        tkr.addWidget(self.btn_record_tp)
-        lo.addLayout(tkr)
+        clo.addWidget(self.cb_player_mod)
+        sr = self._labeled_row(_tr("Speed Multiplier:"),
+                               self._spin(self.config.player_speed_mult, 0.5, 10.0, 0.5,
+                                          lambda v: setattr(self.config, "player_speed_mult", v), double=True))
+        clo.addLayout(sr)
+        jr = self._labeled_row(_tr("Jump Multiplier:"),
+                               self._spin(self.config.player_jump_mult, 0.5, 10.0, 0.5,
+                                          lambda v: setattr(self.config, "player_jump_mult", v), double=True))
+        clo.addLayout(jr)
+        lo.addWidget(card)
+
+        card, clo = self._card()
+        clo.addWidget(self._section_header(_tr("COMMANDS")))
+        tkr_lbl = QLabel(self.config.teleport_collectible_key)
+        tkr_btn = QPushButton(_tr("Record"))
+        tkr_btn.clicked.connect(self._start_tp_key_record)
+        tkr = self._key_record_row(None, tkr_lbl, tkr_btn)
+        self.lbl_tp_key = tkr_lbl
+        self.btn_record_tp = tkr_btn
+        clo.addLayout(tkr)
         info = QLabel(_tr("Hold the key above to teleport nearest item to you.\nSet speed/jump mult and enable Player Mod to apply."))
-        info.setStyleSheet("color: #888; font-size: 10px;")
+        info.setStyleSheet(f"color: {self.C['text_dim']}; font-size: 10px;")
         info.setWordWrap(True)
-        lo.addWidget(info)
+        clo.addWidget(info)
+        lo.addWidget(card)
+
         lo.addStretch()
 
     def _build_camouflage_tab(self):
         p = self._pages["CAMOUFLAGE"]
         lo = QVBoxLayout(p)
         lo.setContentsMargins(4, 4, 4, 4)
-        lo.setSpacing(6)
+        lo.setSpacing(10)
 
-        hdr = QLabel("CAMOUFLAGE")
-        hdr.setStyleSheet("font-size: 14px; font-weight: bold; color: #8ab4f8;")
+        hdr = QLabel(_tr("CAMOUFLAGE"))
+        hdr.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {self.C['accent2']};")
         lo.addWidget(hdr)
 
         self.lbl_camo_status = QLabel("Ready")
         self.lbl_camo_status.setWordWrap(True)
-        self.lbl_camo_status.setStyleSheet("color: #8ab4f8; font-size: 11px; font-weight: bold; background-color: #12121c; padding: 6px; border-radius: 4px; border: 1px solid #2a2a3e;")
+        self.lbl_camo_status.setStyleSheet(
+            f"color: {self.C['accent2']}; font-size: 11px; font-weight: bold; "
+            f"background-color: {self.C['surface']}; padding: 8px 10px; "
+            f"border-radius: 8px; border: 1px solid {self.C['border']};"
+        )
         lo.addWidget(self.lbl_camo_status)
 
         self.lbl_bridge_status = QLabel("Bridge: checking...")
-        self.lbl_bridge_status.setStyleSheet("color: #aaa; font-size: 10px;")
+        self.lbl_bridge_status.setStyleSheet(f"color: {self.C['text_dim']}; font-size: 10px;")
         lo.addWidget(self.lbl_bridge_status)
 
+        card, clo = self._card(spacing=8)
         for text, color, cmd in [
-            ("Start Painting", "#4fd16a", self._on_paint_now),
-            ("Stop Painting", "#e74c3c", self._on_stop_camo),
-            ("Review", "#3498db", self._on_preview),
-            ("Unreview", "#f39c12", self._on_unpreview),
+            (_tr("Start Painting"), self.C["good"], self._on_paint_now),
+            (_tr("Stop Painting"), self.C["bad"], self._on_stop_camo),
+            (_tr("Review"), self.C["accent"], self._on_preview),
+            (_tr("Unreview"), self.C["warn"], self._on_unpreview),
         ]:
             btn = QPushButton(text)
-            btn.setStyleSheet(f"QPushButton {{ background-color: #1a1a1a; color: {color}; border: 1px solid #333; padding: 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }} QPushButton:hover {{ background-color: #2a2a2a; }}")
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {self.C['surface2']}; color: {color}; "
+                f"border: 1px solid {self.C['border2']}; padding: 9px; border-radius: 8px; "
+                f"font-size: 11px; font-weight: bold; }}"
+                f" QPushButton:hover {{ background-color: {self.C['surface3']}; border-color: {color}; }}"
+            )
             btn.clicked.connect(cmd)
-            lo.addWidget(btn)
+            clo.addWidget(btn)
+        lo.addWidget(card)
 
         lo.addStretch()
 
@@ -1205,16 +1295,33 @@ class Overlay(QWidget):
         self._player_mod_active = False
         self._camo_notification = ""
         self._camo_notification_tick = 0
+
+        # ESP data is produced by a background worker so the paint thread never
+        # blocks on memory reads (fixes lag) and keeps camera+positions coherent.
+        self._snapshot = {"cam": None, "players": [], "actors": [], "ok": False}
+        self._snapshot_lock = threading.Lock()
+        self._cached_w = 1920
+        self._cached_h = 1080
+        self._tracked = {}          # ps key -> {"data":..., "last_seen": monotonic}
+        self._esp_running = True
+        self._esp_thread = threading.Thread(target=self._esp_worker, daemon=True)
+        self._esp_thread.start()
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
         self.timer.start(16)
 
         self.game_hwnd = self._find_game_window()
         self._resize_to_game()
+        self._resize_counter = 0
 
         self.key_timer = QTimer(self)
         self.key_timer.timeout.connect(self._poll_keys)
         self.key_timer.start(50)
+
+    # How long (seconds) a player keeps being drawn after the last successful
+    # read, so momentary read failures never make the ESP flicker/disappear.
+    PLAYER_GRACE_S = 0.5
 
     def _find_game_window(self):
         try:
@@ -1237,8 +1344,18 @@ class Overlay(QWidget):
             self.setGeometry(0, 0, 1920, 1080)
 
     def update_overlay(self):
-        self._resize_to_game()
+        # Cache dims on the GUI thread so the worker never touches QWidget geometry.
+        self._cached_w = self.width()
+        self._cached_h = self.height()
+        # Resizing does win32 calls; no need to do it every frame.
+        self._resize_counter = getattr(self, "_resize_counter", 0) + 1
+        if self._resize_counter % 15 == 0:
+            self._resize_to_game()
         self.update()
+
+    def closeEvent(self, event):
+        self._esp_running = False
+        super().closeEvent(event)
 
     def _poll_keys(self):
         VK_INSERT = 0x2D
@@ -1286,6 +1403,133 @@ class Overlay(QWidget):
             self.esp.player_mod(1.0, 1.0)
             self._player_mod_active = False
 
+    # -----------------------------------------------------------------------
+    # Background ESP reader — keeps all memory reads off the paint thread.
+    # -----------------------------------------------------------------------
+    def _esp_worker(self):
+        while self._esp_running:
+            try:
+                if not self.config.enabled:
+                    with self._snapshot_lock:
+                        self._snapshot = {"cam": None, "players": [], "actors": [], "ok": False, "off": True}
+                    self._tracked.clear()
+                    time.sleep(0.05)
+                    continue
+                snap = self._build_snapshot()
+                if snap is not None:
+                    with self._snapshot_lock:
+                        self._snapshot = snap
+                    self._apply_aim(snap)
+            except Exception:
+                # Never let the worker die; keep last snapshot on transient errors.
+                pass
+            time.sleep(0.002)
+
+    def _build_snapshot(self):
+        cam = self.esp.get_camera()
+        if not cam:
+            return {"cam": None, "players": [], "actors": [], "ok": False, "off": False}
+
+        cfg = self.config
+        now = time.monotonic()
+        current = {}
+        try:
+            for pdata in self.esp.iter_players(
+                include_local=cfg.show_local,
+                team_filter=cfg.team_filter,
+                enemy_only=cfg.enemy_only,
+            ):
+                is_local = pdata["is_local"]
+                actor = pdata["actor"]
+                ps = pdata["player_state"]
+                is_hunter = pdata.get("is_hunter", False)
+                is_survivor = pdata.get("is_survivor", False)
+
+                entry = {
+                    "is_local": is_local,
+                    "pos": pdata["pos"],
+                    "actor": actor,
+                    "player_state": ps,
+                    "idx": pdata["idx"],
+                    "role": pdata.get("role", "Unknown"),
+                    "is_enemy": pdata.get("is_enemy", False),
+                    "is_hunter": is_hunter,
+                    "is_survivor": is_survivor,
+                    "invincible": False,
+                    "visible": None,
+                    "rot": None,
+                    "bones": None,
+                    "health": None,
+                }
+
+                if cfg.invincible_detect and not is_local:
+                    entry["invincible"] = self.esp.get_invincible(actor)
+                if (not is_local) and cfg.enemy_only and not is_hunter and not is_survivor:
+                    entry["visible"] = self.esp._is_visible(actor)
+                if actor and (cfg.box_esp or cfg.corner_box):
+                    entry["rot"] = self.esp.get_actor_root_rotation(actor)
+                if cfg.skeleton_esp and actor and not is_local:
+                    bones = self.esp.get_skeleton_positions(actor)
+                    if not bones:
+                        bones = self.esp.get_skeleton_positions_by_indices(actor, cfg.bone_indices)
+                    entry["bones"] = bones
+                if cfg.health_bar or cfg.shield_bar:
+                    entry["health"] = self.esp.get_health(actor, ps)
+
+                current[ps] = entry
+                self._tracked[ps] = {"data": entry, "last_seen": now}
+        except Exception:
+            pass
+
+        # Persistence: include recently-seen players that were missed this cycle
+        # so momentary read failures never make the ESP flicker/disappear.
+        players = []
+        for ps, tracked in list(self._tracked.items()):
+            if ps in current:
+                players.append(current[ps])
+            elif now - tracked["last_seen"] <= self.PLAYER_GRACE_S:
+                players.append(tracked["data"])
+            else:
+                del self._tracked[ps]
+
+        actors = []
+        if cfg.draw_all:
+            try:
+                for adata in self.esp.iter_actors(max_actors=500, class_filter="Collectible"):
+                    d = dist(adata["pos"], cam["loc"])
+                    if d > cfg.draw_all_max_distance:
+                        continue
+                    actors.append({"pos": adata["pos"], "class_name": adata.get("class_name", "")})
+            except Exception:
+                pass
+
+        best_target = None
+        if cfg.aimbot_enabled or cfg.magnet_enabled:
+            try:
+                magnet_active = cfg.magnet_enabled and self._magnet_key_held()
+                if magnet_active:
+                    fov = cfg.magnet_fov
+                elif cfg.aimbot_enabled:
+                    fov = cfg.aimbot_fov
+                else:
+                    fov = 0
+                best_target = self._find_best_target(cam, self._cached_w, self._cached_h, fov if fov > 0 else None)
+            except Exception:
+                best_target = None
+
+        return {"cam": cam, "players": players, "actors": actors,
+                "best_target": best_target, "ok": True, "off": False}
+
+    def _apply_aim(self, snap):
+        cfg = self.config
+        best_target = snap.get("best_target")
+        if not best_target:
+            return
+        if cfg.magnet_enabled and self._magnet_key_held():
+            self._magnet_at(best_target[0], best_target[1])
+        elif cfg.aimbot_enabled and self._aim_key_held():
+            self._aim_at(best_target[0], best_target[1])
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -1295,22 +1539,21 @@ class Overlay(QWidget):
         w = self.width()
         h = self.height()
 
-        if not self.config.enabled:
+        with self._snapshot_lock:
+            snap = self._snapshot
+
+        if snap.get("off") or not self.config.enabled:
             painter.setPen(QPen(QColor(255, 255, 255)))
             painter.drawText(10, 20, _tr("ESP OFF"))
             return
 
-        cam = self.esp.get_camera()
+        cam = snap.get("cam")
         if not cam:
             painter.setPen(QPen(QColor(255, 255, 255)))
             painter.drawText(10, 20, _tr("NO CAMERA"))
             return
 
-        all_players = list(self.esp.iter_players(
-            include_local=self.config.show_local,
-            team_filter=self.config.team_filter,
-            enemy_only=self.config.enemy_only,
-        ))
+        all_players = snap.get("players", [])
 
         local_pos = None
         local_is_hunter = None
@@ -1350,9 +1593,7 @@ class Overlay(QWidget):
                     continue
                 if is_survivor and not self.config.survivor_esp:
                     continue
-            invincible = False
-            if self.config.invincible_detect and not is_local:
-                invincible = self.esp.get_invincible(actor)
+            invincible = pdata.get("invincible", False)
             if is_local:
                 color = self.config.local_color
             elif invincible:
@@ -1363,8 +1604,7 @@ class Overlay(QWidget):
                 color = self.config.survivor_visual_color
             else:
                 if self.config.enemy_only:
-                    visible = self.esp._is_visible(actor)
-                    if visible:
+                    if pdata.get("visible"):
                         color = self.config.visible_color
                     else:
                         color = self.config.not_visible_color
@@ -1378,7 +1618,7 @@ class Overlay(QWidget):
                 radius = int(self.config.dot_radius * scale)
                 self._draw_dot(painter, dsx, dsy, max(2, radius), color)
 
-            rot = self.esp.get_actor_root_rotation(actor) if actor else None
+            rot = pdata.get("rot")
             hw = self.config.box_height_world / 3.0
             pen_width = max(1, self.config.line_thickness)
             if self.config.box_esp and not self.config.corner_box:
@@ -1388,18 +1628,13 @@ class Overlay(QWidget):
                 draw_corner_box(painter, pos, cam, w, h,
                                 self.config.box_height_world, hw, rot, color, scale, 0.25, pen_width)
 
-            if self.config.skeleton_esp and actor and not is_local:
-                bones = self.esp.get_skeleton_positions(actor)
+            if self.config.skeleton_esp and not is_local:
+                bones = pdata.get("bones")
                 if bones:
                     draw_skeleton(painter, bones, cam, w, h, self.config.skeleton_color)
-                else:
-                    indices = self.config.bone_indices
-                    bones2 = self.esp.get_skeleton_positions_by_indices(actor, indices)
-                    if bones2:
-                        draw_skeleton(painter, bones2, cam, w, h, self.config.skeleton_color)
 
             if self.config.health_bar or self.config.shield_bar:
-                health_info = self.esp.get_health(actor, ps)
+                health_info = pdata.get("health")
                 if health_info and health_info[0] is not None:
                     hp, sh = health_info
                     bar_x = dsx - 12 * scale
@@ -1429,10 +1664,7 @@ class Overlay(QWidget):
 
         if self.config.draw_all:
             actor_count = 0
-            for adata in self.esp.iter_actors(max_actors=500, class_filter="Collectible"):
-                d = dist(adata["pos"], cam["loc"])
-                if d > self.config.draw_all_max_distance:
-                    continue
+            for adata in snap.get("actors", []):
                 s = w2s(adata["pos"], cam, w, h)
                 if not s:
                     continue
@@ -1452,31 +1684,17 @@ class Overlay(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.drawText(10, 20, _tr("Players: {count}", count=len(non_local)))
 
-        if self.config.aimbot_enabled or self.config.magnet_enabled:
+        # Aim is applied in the background worker; here we only draw the FOV ring.
+        if self.config.aimbot_enabled and self.config.aimbot_show_fov:
             cx, cy = w / 2, h / 2
-            magnet_active = self.config.magnet_enabled and self._magnet_key_held()
-            aim_active = self.config.aimbot_enabled and self._aim_key_held()
-            if magnet_active:
-                fov = self.config.magnet_fov
-            elif self.config.aimbot_enabled:
-                fov = self.config.aimbot_fov
-            else:
-                fov = 0
-            best_target = self._find_best_target(cam, w, h, fov if fov > 0 else None)
-            if best_target:
-                if self.config.aimbot_show_fov and self.config.aimbot_enabled:
-                    painter.setPen(QPen(QColor(255, 255, 255), 1))
-                    painter.setBrush(Qt.NoBrush)
-                    painter.drawEllipse(
-                        int(cx - self.config.aimbot_fov),
-                        int(cy - self.config.aimbot_fov),
-                        self.config.aimbot_fov * 2,
-                        self.config.aimbot_fov * 2,
-                    )
-                if magnet_active:
-                    self._magnet_at(best_target[0], best_target[1])
-                elif aim_active:
-                    self._aim_at(best_target[0], best_target[1])
+            painter.setPen(QPen(QColor(255, 255, 255), 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(
+                int(cx - self.config.aimbot_fov),
+                int(cy - self.config.aimbot_fov),
+                self.config.aimbot_fov * 2,
+                self.config.aimbot_fov * 2,
+            )
 
         painter.setPen(QPen(QColor(255, 255, 255, 40)))
         wm_font = QFont("Segoe UI", 8)
