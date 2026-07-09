@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Qt5 overlay and menu widgets for MECCHA CHAMELEON ESP."""
 import math
+import os
 import ctypes
 import sys
 import time
@@ -24,6 +25,7 @@ from meccha_chameleon_tools.core import (
 from meccha_chameleon_tools.config import Config, save_config, load_config
 from meccha_chameleon_tools.translations import _tr, LANGUAGE_NAMES
 from meccha_chameleon_tools.camouflage import ensure_bridge_ready, paint_now, paint_start, paint_single, stop_paint, is_bridge_alive, send_preview, send_unpreview
+from meccha_chameleon_tools import updater
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +310,15 @@ class PaintSignals(QObject):
     done = pyqtSignal()
 
 
+class UpdateSignals(QObject):
+    found = pyqtSignal(dict)
+    up_to_date = pyqtSignal()
+    error = pyqtSignal(str)
+    progress = pyqtSignal(int)
+    downloaded = pyqtSignal(str)
+    download_error = pyqtSignal(str)
+
+
 _tab_map = {"ESP": "ESP", "HEALTH": "HEALTH", "VISUAL": "VISUAL", "RADAR": "RADAR", "AIMBOT": "AIMBOT", "PLAYER": "PLAYER", "CAMOUFLAGE": "CAMOUFLAGE"}
 
 
@@ -393,14 +404,153 @@ class Menu(QWidget):
         self._drag_pos = None
         self._key_recorder = KeyRecorder(self._on_key_recorded)
         self._container = None
+        self._update_info = None
+        self._update_state = "idle"
+        self._update_signals = UpdateSignals()
+        self._update_signals.found.connect(self._on_update_found)
+        self._update_signals.up_to_date.connect(self._on_update_up_to_date)
+        self._update_signals.error.connect(self._on_update_error)
+        self._update_signals.progress.connect(self._on_update_progress)
+        self._update_signals.downloaded.connect(self._on_update_downloaded)
+        self._update_signals.download_error.connect(self._on_update_error)
         self._outer_layout = QVBoxLayout(self)
         self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._build_ui()
         self.resize(640, 720)
         self.setMinimumSize(540, 600)
+        QTimer.singleShot(1500, self._check_updates)
 
     def _close_app(self):
         QApplication.quit()
+
+    # ----- Update checker -------------------------------------------------
+    def _style_update_button(self, highlight=False):
+        if highlight:
+            self.update_btn.setStyleSheet(
+                "QPushButton { background: #3a6ea5; color: #fff; border: 1px solid #5a8ec5;"
+                " border-radius: 4px; font-size: 9px; padding: 1px 8px; }"
+                " QPushButton:hover { background: #4a7eb5; }"
+            )
+        else:
+            self.update_btn.setStyleSheet(
+                "QPushButton { background: #1a1a26; color: #888; border: 1px solid #2a2a3e;"
+                " border-radius: 4px; font-size: 9px; padding: 1px 8px; }"
+                " QPushButton:hover { border-color: #4a4a6a; color: #ccc; }"
+            )
+
+    def _refresh_update_button(self):
+        """Render the update button to match the current state (survives rebuilds)."""
+        state = self._update_state
+        if state == "checking":
+            self.update_btn.setText(_tr("Checking..."))
+            self.update_btn.setEnabled(False)
+            self._style_update_button(False)
+        elif state == "available" and self._update_info:
+            self.update_btn.setText(_tr("\u2b07 Update {version}", version=self._update_info["version"]))
+            self.update_btn.setEnabled(True)
+            self._style_update_button(True)
+        elif state == "downloading":
+            self.update_btn.setEnabled(False)
+            self._style_update_button(True)
+        elif state == "up_to_date":
+            self.update_btn.setText(_tr("Up to date"))
+            self.update_btn.setEnabled(False)
+            self._style_update_button(False)
+        elif state == "done":
+            self.update_btn.setText(_tr("Download Complete"))
+            self.update_btn.setEnabled(True)
+            self._style_update_button(True)
+        elif state == "error":
+            self.update_btn.setText(_tr("Update Failed"))
+            self.update_btn.setEnabled(True)
+            self._style_update_button(False)
+        else:
+            self.update_btn.setText(_tr("Check for Updates"))
+            self.update_btn.setEnabled(True)
+            self._style_update_button(False)
+
+    def _check_updates(self):
+        if self._update_state in ("checking", "downloading"):
+            return
+        self._update_state = "checking"
+        self._refresh_update_button()
+
+        def _work():
+            try:
+                info = updater.check_for_update(updater.APP_VERSION)
+                if info:
+                    self._update_signals.found.emit(info)
+                else:
+                    self._update_signals.up_to_date.emit()
+            except Exception as e:
+                self._update_signals.error.emit(str(e))
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _on_update_button_clicked(self):
+        state = self._update_state
+        if state == "available":
+            self._download_update()
+        elif state == "done":
+            self._reveal_download()
+        elif state in ("idle", "up_to_date", "error"):
+            self._check_updates()
+
+    def _download_update(self):
+        info = self._update_info
+        if not info:
+            return
+        if not info.get("asset_url"):
+            import webbrowser
+            webbrowser.open(info.get("page_url", updater.RELEASES_PAGE))
+            return
+        self._update_state = "downloading"
+        self._refresh_update_button()
+        asset_name = info.get("asset_name") or "Meccha-Chameleon-Tools.exe"
+        dest = os.path.join(updater.default_download_dir(), asset_name)
+        self._downloaded_path = dest
+
+        def _work():
+            try:
+                def _cb(done, total):
+                    pct = int(done * 100 / total) if total else 0
+                    self._update_signals.progress.emit(pct)
+                updater.download_update(info["asset_url"], dest, _cb)
+                self._update_signals.downloaded.emit(dest)
+            except Exception as e:
+                self._update_signals.download_error.emit(str(e))
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _reveal_download(self):
+        path = getattr(self, "_downloaded_path", None)
+        if path and os.path.exists(path):
+            try:
+                import subprocess
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+            except Exception:
+                pass
+
+    def _on_update_found(self, info):
+        self._update_info = info
+        self._update_state = "available"
+        self._refresh_update_button()
+
+    def _on_update_up_to_date(self):
+        self._update_state = "up_to_date"
+        self._refresh_update_button()
+
+    def _on_update_error(self, msg):
+        self._update_state = "error"
+        self._refresh_update_button()
+
+    def _on_update_progress(self, pct):
+        self.update_btn.setText(_tr("Downloading... {pct}%", pct=pct))
+
+    def _on_update_downloaded(self, path):
+        self._update_state = "done"
+        self._downloaded_path = path
+        self._refresh_update_button()
 
     def _switch_language(self, lang_code):
         self.config.language = lang_code
@@ -550,17 +700,24 @@ class Menu(QWidget):
         github_link = QLabel('<a href="https://github.com/SilentJMA/Meccha-Chameleon-Tools" style="color: #8ab4f8; text-decoration: none; font-size: 9px;">GitHub</a>')
         github_link.setOpenExternalLinks(True)
         github_link.setStyleSheet("font-size: 9px;")
-        release_label = QLabel("v1.9.2-beta")
+        release_label = QLabel("v" + updater.APP_VERSION)
         release_label.setStyleSheet("color: #666; font-size: 9px;")
+        self.update_btn = QPushButton(_tr("Check for Updates"))
+        self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.setFixedHeight(20)
+        self.update_btn.clicked.connect(self._on_update_button_clicked)
+        self._style_update_button()
         copyright_link = QLabel('<a href="https://github.com/SilentJMA" style="color: #888; text-decoration: none; font-size: 9px;">\u00a9 2026 SilentJMA</a>')
         copyright_link.setOpenExternalLinks(True)
         copyright_link.setStyleSheet("font-size: 9px;")
         footer.addWidget(github_link)
         footer.addStretch()
         footer.addWidget(release_label)
+        footer.addWidget(self.update_btn)
         footer.addStretch()
         footer.addWidget(copyright_link)
         outer.addLayout(footer)
+        self._refresh_update_button()
 
         self._outer_layout.addWidget(container)
 

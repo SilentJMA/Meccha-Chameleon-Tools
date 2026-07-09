@@ -83,7 +83,6 @@ runtime/.build/obj/
 
 # Agent config files (not for distribution)
 AGENTS.md
-*.spec
 
 # Old binaries distributed via releases, not tracked
 Meccha Chameleon Tools.exe

@@ -19,6 +19,7 @@ from meccha_chameleon_tools.core import (
 from meccha_chameleon_tools.config import Config, load_config, save_config, CONFIG_FILE
 from meccha_chameleon_tools.translations import _tr
 from meccha_chameleon_tools.ui import Menu, Overlay
+from meccha_chameleon_tools.updater import APP_VERSION as __version__
 
 
 # Default game directory - user can override via config
