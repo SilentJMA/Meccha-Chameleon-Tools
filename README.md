@@ -36,6 +36,12 @@ only component that uses a small injected bridge DLL for in-game mesh painting.
 | **Player Mod** | Speed & jump multipliers, Teleport Collectible hotkey — *host only* |
 | **Camouflage** | Bridge-based in-game paint system — paint / stop / review / unreview |
 
+> **Note on ESP accuracy:** All ESP overlays are calculated in real time by reading
+> game memory. When an opponent moves rapidly or is partially obscured, the position
+> may show slight inconsistency on a single frame. The **snap line** is the most
+> reliable indicator — it always connects screen-center to the player's resolved
+> position, so follow the line when the box or dot appears to trail.
+
 ### Multi-Language
 
 The UI ships in **9 languages** (EN, DE, FR, ES, CN, JP, KR, RU, TR), selectable from the
@@ -171,6 +177,16 @@ Output: `dist/Meccha Chameleon Tools.exe`.
 ---
 
 ## Changelog
+
+### v1.9.1.2-beta
+- **Camouflage engine updated** — new authenticated session protocol replaces the old
+  loader-based injection (no more `bridge-loader.dll`). Dynamic port assignment,
+  per-instance staging with automatic cleanup of stale bridge folders.
+- **Config persistence fix** — settings now save next to the EXE when frozen, resolving
+  a silent write failure inside the PyInstaller bundle directory.
+- **ESP `bHidden` offset** updated for the latest game patch.
+- **Bridge status** in the Camouflage tab now reliably transitions from "checking" to
+  "Connected" or "Disconnected" (no more stuck label).
 
 ### v1.9.1.1-beta
 - **UI redesign** — modern dark theme with accent palette, gradient controls, and a reorganized

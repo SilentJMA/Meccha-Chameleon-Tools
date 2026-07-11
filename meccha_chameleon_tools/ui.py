@@ -1146,8 +1146,11 @@ class Menu(QWidget):
 
     def _update_bridge_status(self):
         def _check():
-            alive = is_bridge_alive()
-            QTimer.singleShot(0, lambda: self._set_bridge_status(alive))
+            try:
+                alive = is_bridge_alive()
+            except Exception:
+                alive = False
+            QTimer.singleShot(0, lambda a=alive: self._set_bridge_status(a))
         threading.Thread(target=_check, daemon=True).start()
 
     def _set_bridge_status(self, alive):

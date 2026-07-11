@@ -2,10 +2,15 @@
 """Config dataclass with JSON save/load persistence."""
 import json
 import os
+import sys
 from dataclasses import dataclass, field, asdict
 from typing import Tuple, List
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "esp_config.json")
+if getattr(sys, 'frozen', False):
+    _config_dir = os.path.dirname(sys.executable)
+else:
+    _config_dir = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(_config_dir, "esp_config.json")
 
 
 @dataclass

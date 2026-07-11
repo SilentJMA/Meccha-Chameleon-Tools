@@ -697,7 +697,7 @@ class MecchaESP:
             except Exception:
                 pass
             try:
-                vis = ru32(self.pm, actor + self.offsets.get("AActor::bHidden", 0x178))
+                vis = ru32(self.pm, actor + self.offsets.get("AActor::bHidden", 0x58))
                 if vis == 1:
                     return False
             except Exception:
