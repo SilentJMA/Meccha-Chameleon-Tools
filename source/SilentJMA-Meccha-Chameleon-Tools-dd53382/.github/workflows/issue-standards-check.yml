@@ -1,0 +1,57 @@
+name: Issue Standards Check
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-standards:
+    if: github.event_name == 'issues' || (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'needs-more-info'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Issue Standards
+        id: check
+        env:
+          ISSUE_JSON: ${{ toJSON(github.event.issue) }}
+        run: |
+          echo "$ISSUE_JSON" | python scripts/issue_standards_check.py > /tmp/verdict.json 2>&1 || true
+          cat /tmp/verdict.json
+
+      - name: Read Verdict
+        id: verdict
+        run: |
+          echo "complete=$(python -c \"import json; print(json.load(open('/tmp/verdict.json')).get('complete', False))\")" >> $GITHUB_OUTPUT
+          echo "missing=$(python -c \"import json; print(','.join(json.load(open('/tmp/verdict.json')).get('missing_fields', [])))\")" >> $GITHUB_OUTPUT
+
+      - name: Label and Comment - Needs More Info
+        if: steps.verdict.outputs.complete == 'False'
+        run: |
+          gh issue edit ${{ github.event.issue.number }} --add-label "needs-more-info" --remove-label "triaged" 2>/dev/null || true
+          gh issue comment ${{ github.event.issue.number }} --body "Thank you for opening this issue. The following required fields are missing or incomplete:
+
+          **Missing: ${{ steps.verdict.outputs.missing }}**
+
+          Please update your issue with the missing information. Once updated, the standards check will re-run automatically. If you have any questions, refer to ISSUE_STANDARDS.md for guidance."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Label - Complete
+        if: steps.verdict.outputs.complete == 'True'
+        run: |
+          gh issue edit ${{ github.event.issue.number }} --add-label "triaged" --remove-label "needs-more-info" 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ github.token }}

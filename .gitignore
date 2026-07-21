@@ -1,0 +1,96 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# opencode
+.opencode/
+.swarm/
+
+# OS
+Thumbs.db
+.DS_Store
+
+meccha_camouflage_old/
+
+# Debug / standalone scripts
+debug_*.py
+diag_*.py
+find_prop_offsets.py
+_probe_gu*.py
+bind_*.py
+call_*.py
+check_*.py
+comp_scan.py
+find_*.py
+fix_*.py
+full_paint_sequence.py
+get_func_pointers.py
+investigate_*.py
+patch.py
+probe_*.py
+read_*.py
+rediscover.py
+rt_deep_dive.py
+scan_rt_for_d3d11.py
+search_*.py
+set_material_and_paint.py
+test*.py
+verify_paint.py
+vpv_bruteforce.py
+walk_krl_children.py
+
+# Temp / scratch files
+*.txt
+*.tmp
+
+# Files removed from version control
+.gitignore
+LICENSE.txt
+
+# Reverse-engineered DLLs
+chameleonEsp.dll
+meccha-xenos-bridge.dll
+
+# dnSpy decompiler (third-party tool)
+dnSpy-net-win64/
+
+# Scripts scratch files
+scripts/*.txt
+
+dist_single/
+
+# Build artifacts
+dist2/
+standalone_temp/
+meccha-camouflage.exe
+
+# Debug scripts
+debug2.py
+debug3.py
+
+# Reverse-engineered DLLs (root)
+Chameleon_Interna_.dll
+
+# Build archives
+camouflage-standalone.zip
+
+# Runtime build artifacts (source only in runtime/)
+runtime/.build/bin/
+runtime/.build/obj/
+
+# Agent config files (not for distribution)
+AGENTS.md
+
+# Old binaries distributed via releases, not tracked
+Meccha Chameleon Tools.exe
+
+# Old patch scripts (no longer needed)
+_patch_bridge.py
+patch_bridge.py
+patch_remaining.py
+
+# Demo media (too large for repo)
+demo.mp4
