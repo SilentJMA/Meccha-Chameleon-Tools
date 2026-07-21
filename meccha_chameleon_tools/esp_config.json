@@ -1,0 +1,80 @@
+{
+  "enabled": true,
+  "dot_esp": true,
+  "box_esp": false,
+  "skeleton_esp": false,
+  "show_local": true,
+  "show_names": true,
+  "show_distance": true,
+  "snap_lines": true,
+  "team_filter": false,
+  "enemy_color": [
+    255,
+    0,
+    0
+  ],
+  "local_color": [
+    0,
+    255,
+    0
+  ],
+  "skeleton_color": [
+    0,
+    255,
+    255
+  ],
+  "box_color": [
+    255,
+    255,
+    255
+  ],
+  "radar_color": [
+    255,
+    255,
+    255
+  ],
+  "dot_radius": 8,
+  "box_height_world": 100.0,
+  "box_y_offset": 0,
+  "distance_scaling": true,
+  "scale_reference_dist": 1500.0,
+  "health_bar": true,
+  "shield_bar": true,
+  "aimbot_enabled": false,
+  "aimbot_key": "MB5",
+  "aimbot_fov": 150,
+  "aimbot_smooth": 0.3,
+  "aimbot_target_offset": 90.0,
+  "aimbot_show_fov": true,
+  "aimbot_visible_check": false,
+  "radar_enabled": false,
+  "radar_size": 180,
+  "radar_range": 5000.0,
+  "radar_opacity": 160,
+  "camouflage_enabled": true,
+  "camouflage_sample_size": 5,
+  "camouflage_opacity": 100,
+  "game_directory": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\MECCA CHAMELEON\\Chameleon\\Binaries\\Win64",
+  "bone_indices": {
+    "head": 66,
+    "neck_01": 65,
+    "spine_03": 52,
+    "spine_02": 36,
+    "spine_01": 5,
+    "pelvis": 1,
+    "clavicle_l": 13,
+    "upperarm_l": 14,
+    "lowerarm_l": 15,
+    "hand_l": 16,
+    "clavicle_r": 30,
+    "upperarm_r": 31,
+    "lowerarm_r": 32,
+    "hand_r": 33,
+    "thigh_l": 59,
+    "calf_l": 60,
+    "foot_l": 61,
+    "thigh_r": 72,
+    "calf_r": 73,
+    "foot_r": 74
+  }
+}

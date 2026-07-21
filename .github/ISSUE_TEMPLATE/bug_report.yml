@@ -1,0 +1,105 @@
+name: Bug Report
+description: Report a bug to help us improve
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        Please check that you are on the [latest release](https://github.com/SilentJMA/Meccha-Chameleon-Tools/releases) before submitting.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the bug
+      placeholder: e.g. Snap lines not drawing when player is off-screen
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Numbered steps from a known-good state
+      placeholder: |
+        1. Launch game and tool
+        2. Load into a match with 4+ players
+        3. Enable snap lines in ESP tab
+        4. Look away from a player so they are off-screen
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen
+      placeholder: Snap lines should draw from the bottom of the screen to the screen edge where the player is located
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens (include error messages verbatim)
+      placeholder: Snap lines are not visible at all. No error is shown.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: e.g. Windows 11 23H2
+    validations:
+      required: true
+
+  - type: input
+    id: game_version
+    attributes:
+      label: Game Version
+      description: As shown on the title screen
+    validations:
+      required: true
+
+  - type: input
+    id: tool_version
+    attributes:
+      label: Tool Version
+      description: From the release tag (e.g. v1.2.1)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots / Logs
+      description: If applicable, add screenshots or paste console output
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: Attempted Fixes
+      description: What have you already tried?
+      placeholder: Restarted tool, toggled settings, reinstalled
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I am on the latest release
+          required: true
+        - label: I have searched for existing issues (open and closed)
+          required: true
+        - label: I have included all required information above
+          required: true
