@@ -4,7 +4,7 @@
 
 # Meccha Chameleon Tools
 
-> **ESP WIP** — ESP overlay is a work-in-progress. Camouflage is fully functional.
+> **ESP WIP** - ESP overlay is a work-in-progress. Camouflage is fully functional.
 
 External ESP · Aimbot · Radar · Player Mod · Camouflage for **MECCA CHAMELEON** (UE5.6)
 
@@ -17,7 +17,7 @@ External ESP · Aimbot · Radar · Player Mod · Camouflage for **MECCA CHAMELEO
 ## Overview
 
 A fully **external** overlay tool for MECCA CHAMELEON. All gameplay reads happen via
-memory (pymem) — nothing is injected into the game's code. The camouflage system is the
+memory (pymem) - nothing is injected into the game's code. The camouflage system is the
 only component that uses a small injected bridge DLL for in-game mesh painting.
 
 > **Status:** `1.9.2.0-beta` is a pre-release. Features are stable but the build is
@@ -35,13 +35,13 @@ only component that uses a small injected bridge DLL for in-game mesh painting.
 | **Radar** | External minimap with configurable size (80–400 px) and range (1000–50000) |
 | **Aimbot** | Smooth aim assist, FOV circle, rebindable key, visible-only check |
 | **Magnet** | Snap aim assist with independent FOV, strength slider, and key binding |
-| **Player Mod** | Speed & jump multipliers, Teleport Collectible hotkey — *host only* |
-| **Camouflage** | Bridge-based in-game paint system — paint / stop / review / unreview |
+| **Player Mod** | Speed & jump multipliers, Teleport Collectible hotkey - *host only* |
+| **Camouflage** | Bridge-based in-game paint system - paint / stop / review / unreview |
 
 > **Note on ESP accuracy:** All ESP overlays are calculated in real time by reading
 > game memory. When an opponent moves rapidly or is partially obscured, the position
 > may show slight inconsistency on a single frame. The **snap line** is the most
-> reliable indicator — it always connects screen-center to the player's resolved
+> reliable indicator - it always connects screen-center to the player's resolved
 > position, so follow the line when the box or dot appears to trail.
 
 ### Multi-Language
@@ -52,13 +52,13 @@ menu. The choice persists across sessions.
 ### In-App Updater
 
 The menu checks GitHub Releases (including pre-releases) on startup and lets you download
-and open the latest build directly — no need to revisit the Releases page manually.
+and open the latest build directly - no need to revisit the Releases page manually.
 
 ---
 
 ## Quick Start
 
-### Standalone (recommended — no Python required)
+### Standalone (recommended - no Python required)
 1. Download **`Meccha Chameleon Tools.exe`** from the [latest release](../../releases/latest).
 2. Launch MECCA CHAMELEON (windowed / borderless).
 3. Run `Meccha Chameleon Tools.exe`.
@@ -87,17 +87,17 @@ python -m meccha_chameleon_tools
 
 ### Settings Tabs
 
-- **ESP** — Dot / Box / Corner Box / Skeleton toggles, Show Local, Names, Roles, Distance,
+- **ESP** - Dot / Box / Corner Box / Skeleton toggles, Show Local, Names, Roles, Distance,
   Snap Lines, Team Filter, Enemy Only, Distance Scaling, dot radius, visible/not-visible colors.
-- **HEALTH** — Health bar, shield bar, model height, Y offset.
-- **VISUALS** — Per-role ESP toggles, Hunter/Survivor colors, invincible detection, Draw All
+- **HEALTH** - Health bar, shield bar, model height, Y offset.
+- **VISUALS** - Per-role ESP toggles, Hunter/Survivor colors, invincible detection, Draw All
   actors, Disable Buried, Show Cursor, Background Geometry, line thickness & point size.
-- **RADAR** — Enable/disable, size (80–400 px), range (1000–50000).
-- **AIM/ASSIST** — Aimbot (enable, FOV circle, key, radius, smoothing, offset) and the Magnet
+- **RADAR** - Enable/disable, size (80–400 px), range (1000–50000).
+- **AIM/ASSIST** - Aimbot (enable, FOV circle, key, radius, smoothing, offset) and the Magnet
   aim-assist sub-section (key, FOV, strength).
-- **PLAYER** — Player Mod toggle with Speed & Jump multipliers, Teleport Collectible key.
+- **PLAYER** - Player Mod toggle with Speed & Jump multipliers, Teleport Collectible key.
   *Host only.*
-- **CAMOUFLAGE** — Paint, stop, review, and unreview your character mesh. Requires the game
+- **CAMOUFLAGE** - Paint, stop, review, and unreview your character mesh. Requires the game
   process running.
 
 ---
@@ -184,30 +184,30 @@ Outputs: `dist/Meccha Chameleon Tools.exe`, `dist/MecchaCamouflage.exe`, `camouf
 ## Changelog
 
 ### v1.9.2.0-beta
-- **Camouflage v1.6.2 engine** — updated native bridge binaries and mesh profiles.
-- **Emissive controls** — added `emissive` / `fill_emissive` tuning fields to prevent
+- **Camouflage engine** - updated native bridge binaries and mesh profiles.
+- **Emissive controls** - added `emissive` / `fill_emissive` tuning fields to prevent
   painted surfaces looking incorrectly emissive (defaults to 0.0).
-- **Dynamic bridge port** — switched from hardcoded port to OS-assigned dynamic ports
+- **Dynamic bridge port** - switched from hardcoded port to OS-assigned dynamic ports
   with authenticated hello handshake.
-- **ESP WIP** — core ESP reading is present; overlay rendering is under active development.
+- **ESP WIP** - core ESP reading is present; overlay rendering is under active development.
 
 ### v1.9.1.2-beta
-- **Camouflage engine updated** — new authenticated session protocol replaces the old
+- **Camouflage engine updated** - new authenticated session protocol replaces the old
   loader-based injection (no more `bridge-loader.dll`). Dynamic port assignment,
   per-instance staging with automatic cleanup of stale bridge folders.
-- **Config persistence fix** — settings now save next to the EXE when frozen, resolving
+- **Config persistence fix** - settings now save next to the EXE when frozen, resolving
   a silent write failure inside the PyInstaller bundle directory.
 - **ESP `bHidden` offset** updated for the latest game patch.
 - **Bridge status** in the Camouflage tab now reliably transitions from "checking" to
   "Connected" or "Disconnected" (no more stuck label).
 
 ### v1.9.1.1-beta
-- **UI redesign** — modern dark theme with accent palette, gradient controls, and a reorganized
+- **UI redesign** - modern dark theme with accent palette, gradient controls, and a reorganized
   card-based menu (sidebar icons, grouped sections, primary Save / danger Close buttons).
-- **ESP stability** — overlays now render from a coherent off-thread snapshot with player
+- **ESP stability** - overlays now render from a coherent off-thread snapshot with player
   persistence, eliminating flicker, lag, and players disappearing during fast movement.
-- **Localization** — added Russian (RU) and Turkish (TR); now 9 languages.
-- **Updater** — in-app update checker/downloader added; `meccha_chameleon_tools.spec` now tracked
+- **Localization** - added Russian (RU) and Turkish (TR); now 9 languages.
+- **Updater** - in-app update checker/downloader added; `meccha_chameleon_tools.spec` now tracked
   so maintainers can rebuild.
 
 ### v1.9.1-beta
