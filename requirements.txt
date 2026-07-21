@@ -1,3 +1,4 @@
 pymem>=1.13.0
 PyQt5>=5.15.0
 pywin32>=305
+certifi>=2024.0.0

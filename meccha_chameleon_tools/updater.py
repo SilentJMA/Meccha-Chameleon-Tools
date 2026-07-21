@@ -12,7 +12,13 @@ import ssl
 import urllib.request
 from typing import Callable, Optional
 
-APP_VERSION = "1.9.2.0-beta"
+try:
+    import certifi
+    _CA_BUNDLE = certifi.where()
+except ImportError:
+    _CA_BUNDLE = None
+
+APP_VERSION = "1.9.2.1-beta"
 GITHUB_REPO = "SilentJMA/Meccha-Chameleon-Tools"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=30"
@@ -49,7 +55,10 @@ def is_newer(remote_version, current_version=APP_VERSION):
 
 
 def _open_url(url, timeout=10):
-    ctx = ssl.create_default_context()
+    kwargs = {}
+    if _CA_BUNDLE:
+        kwargs["cafile"] = _CA_BUNDLE
+    ctx = ssl.create_default_context(**kwargs)
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     return urllib.request.urlopen(req, timeout=timeout, context=ctx)
 

@@ -20,7 +20,7 @@ A fully **external** overlay tool for MECCA CHAMELEON. All gameplay reads happen
 memory (pymem) - nothing is injected into the game's code. The camouflage system is the
 only component that uses a small injected bridge DLL for in-game mesh painting.
 
-> **Status:** `1.9.2.0-beta` is a pre-release. Features are stable but the build is
+> **Status:** `1.9.2.1-beta` is a pre-release. Features are stable but the build is
 > published under the `-beta` channel so the in-app updater can deliver it to testers.
 
 ---
@@ -177,11 +177,16 @@ pip install -r requirements.txt
 pyinstaller --onefile --windowed --name "Camouflage" --add-data "native;native" --add-data "mesh-profiles;mesh-profiles" --distpath "." --noconfirm main.py
 ```
 
-Outputs: `dist/Meccha Chameleon Tools.exe`, `dist/MecchaCamouflage.exe`, `camouflage-lighter/Camouflage.exe`.
+Outputs: `dist/Meccha Chameleon Tools.exe`, `dist/MecchaCamouflage.exe`.
 
 ---
 
 ## Changelog
+
+### v1.9.2.1-beta
+- **Updated updater** - fixed SSL certificate handling in frozen builds (added `certifi`
+  so `ssl.create_default_context()` finds CA certs). Error messages are now shown to the
+  user instead of a silent "Update Failed".
 
 ### v1.9.2.0-beta
 - **Camouflage engine** - updated native bridge binaries and mesh profiles.

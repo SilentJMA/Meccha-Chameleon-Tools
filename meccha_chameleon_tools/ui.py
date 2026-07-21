@@ -586,7 +586,10 @@ class Menu(QWidget):
 
     def _on_update_error(self, msg):
         self._update_state = "error"
+        self._error_msg = msg
         self._refresh_update_button()
+        from PyQt5.QtWidgets import QMessageBox
+        QMessageBox.warning(self, _tr("Update Failed"), str(msg))
 
     def _on_update_progress(self, pct):
         self.update_btn.setText(_tr("Downloading... {pct}%", pct=pct))

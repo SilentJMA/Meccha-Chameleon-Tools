@@ -11,6 +11,7 @@ a = Analysis(
         ('meccha_chameleon_tools/mesh-profiles', 'mesh-profiles'),
     ],
     hiddenimports=[
+        'certifi',
         'pymem',
         'pymem.memory',
         'pymem.process',
