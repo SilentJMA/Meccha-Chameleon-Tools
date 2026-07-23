@@ -157,6 +157,20 @@ Camouflage     → loader-based bridge injection (TCP, port 50262) for mesh pain
 | Radar not showing | Enable Radar in the RADAR tab |
 | Player Mod not working | Must be the game host |
 
+### Windows Security
+
+If the log reports an error like the following, Windows Security has blocked a runtime file:
+
+> Bridge warmup failed: One or more errors occurred. (Operation did not complete successfully because the file contains a virus or potentially unwanted software.)
+
+Open Windows Security → **Virus & threat protection** → **Manage settings** → scroll down to **Exclusions** → click **Add or remove exclusions** → **Add an exclusion** → **Folder** → select:
+
+```
+%LOCALAPPDATA%\MecchaCamouflage\
+```
+
+After adding the exclusion, restart the tool.
+
 ---
 
 ## Building from Source
